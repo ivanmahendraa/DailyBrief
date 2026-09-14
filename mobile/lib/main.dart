@@ -1,122 +1,250 @@
 import 'package:flutter/material.dart';
+import 'core/constants/api_constants.dart';
+import 'core/theme/app_theme.dart';
+import 'services/api/health_service.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const DailyBriefApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class DailyBriefApp extends StatelessWidget {
+  const DailyBriefApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      title: 'DailyBrief',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightTheme,
+      home: const StartScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class StartScreen extends StatefulWidget {
+  const StartScreen({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<StartScreen> createState() => _StartScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _StartScreenState extends State<StartScreen> {
+  final HealthService _healthService = HealthService();
+  bool _isLoading = false;
+  HealthStatus? _status;
 
-  void _incrementCounter() {
+  @override
+  void initState() {
+    super.initState();
+    _checkConnection();
+  }
+
+  Future<void> _checkConnection() async {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _isLoading = true;
+    });
+
+    final result = await _healthService.checkHealth();
+
+    if (!mounted) return;
+    setState(() {
+      _status = result;
+      _isLoading = false;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppTheme.space24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // App Icon / Logo Indicator
+                  Center(
+                    child: Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary,
+                        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                      ),
+                      child: const Icon(
+                        Icons.newspaper_rounded,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.space20),
+
+                  // App Title
+                  const Text(
+                    'DailyBrief',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.5,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.space4),
+
+                  // Tagline
+                  const Text(
+                    'Temukan Informasi dalam Satu Sentuhan',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.space32),
+
+                  // Connection Status Card
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppTheme.space20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _isLoading
+                                      ? AppTheme.warning
+                                      : (_status?.isHealthy == true
+                                          ? AppTheme.success
+                                          : AppTheme.error),
+                                ),
+                              ),
+                              const SizedBox(width: AppTheme.space8),
+                              const Text(
+                                'Status Koneksi Backend',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AppTheme.space16),
+
+                          if (_isLoading) ...[
+                            const Row(
+                              children: [
+                                SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppTheme.primary,
+                                  ),
+                                ),
+                                SizedBox(width: AppTheme.space12),
+                                Text(
+                                  'Memeriksa status server...',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ] else ...[
+                            _buildInfoRow(
+                              'Server API',
+                              _status?.isHealthy == true
+                                  ? 'Terhubung (Online)'
+                                  : 'Terputus (Offline)',
+                              isHighlight: true,
+                              isSuccess: _status?.isHealthy == true,
+                            ),
+                            const SizedBox(height: AppTheme.space8),
+                            _buildInfoRow(
+                              'Database',
+                              _status?.databaseStatus ?? '-',
+                            ),
+                            const SizedBox(height: AppTheme.space8),
+                            _buildInfoRow(
+                              'Target URL',
+                              ApiConstants.baseUrl,
+                            ),
+                            if (_status?.isHealthy != true && _status != null) ...[
+                              const SizedBox(height: AppTheme.space12),
+                              Container(
+                                padding: const EdgeInsets.all(AppTheme.space12),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.errorLight,
+                                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                                ),
+                                child: Text(
+                                  _status!.message,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.error,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppTheme.space24),
+
+                  // Retry Button
+                  ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _checkConnection,
+                    icon: const Icon(Icons.refresh_rounded, size: 20),
+                    label: const Text('Periksa Ulang'),
+                  ),
+                ],
+              ),
             ),
-          ],
+          ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value,
+      {bool isHighlight = false, bool isSuccess = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            color: AppTheme.textSecondary,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: isHighlight ? FontWeight.w600 : FontWeight.normal,
+            color: isHighlight
+                ? (isSuccess ? AppTheme.success : AppTheme.error)
+                : AppTheme.textPrimary,
+          ),
+        ),
+      ],
     );
   }
 }

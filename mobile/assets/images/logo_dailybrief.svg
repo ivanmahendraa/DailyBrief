@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#1D4ED8" />
+    </linearGradient>
+  </defs>
+
+  <!-- Blue Squircle Container -->
+  <rect width="100" height="100" rx="22" fill="url(#bgGradient)" />
+
+  <!-- Microphone Capsule -->
+  <rect x="40" y="22" width="20" height="34" rx="10" fill="#FFFFFF" />
+
+  <!-- Center Accent Hole inside Capsule -->
+  <circle cx="50" cy="38" r="4.2" fill="#2563EB" />
+
+  <!-- Microphone Cradle Arc -->
+  <path d="M 31 43 A 19 19 0 0 0 69 43" fill="none" stroke="#FFFFFF" stroke-width="6.5" stroke-linecap="round" />
+
+  <!-- Stand Stem -->
+  <path d="M 50 62 L 50 74" fill="none" stroke="#FFFFFF" stroke-width="6.5" stroke-linecap="round" />
+
+  <!-- Base Stand -->
+  <path d="M 36 74 L 64 74" fill="none" stroke="#FFFFFF" stroke-width="6.5" stroke-linecap="round" />
+</svg>

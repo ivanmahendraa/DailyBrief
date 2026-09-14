@@ -1,0 +1,44 @@
+# Private project documents
+/PRD-DailyBrief.md
+/DESIGN-DailyBrief.md
+/TASK-DailyBrief.md
+
+# Private AI instruction files
+/backend/AGENTS.md
+/backend/CLAUDE.md
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Laravel
+/backend/vendor/
+/backend/node_modules/
+/backend/storage/*.key
+/backend/storage/logs/
+/backend/storage/framework/cache/
+/backend/storage/framework/sessions/
+/backend/storage/framework/views/
+/backend/bootstrap/cache/
+
+# Laravel generated files
+/backend/public/storage/
+
+# Flutter
+/mobile/.dart_tool/
+/mobile/build/
+/mobile/.pub-cache/
+/mobile/.flutter-plugins
+/mobile/.flutter-plugins-dependencies
+
+# IDE
+.idea/
+.vscode/
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

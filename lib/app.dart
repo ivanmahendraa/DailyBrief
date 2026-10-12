@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'core/theme/app_theme.dart';
 import 'features/splash/screens/splash_screen.dart';
+import 'services/preference_service.dart';
 import 'services/tts_service.dart';
 
 /// Root widget aplikasi DailyBrief.
@@ -9,8 +10,13 @@ import 'services/tts_service.dart';
 /// serta layar awal Splash Screen (TASK-08, TASK-21).
 class DailyBriefApp extends StatelessWidget {
   final TtsService? ttsService;
+  final PreferenceService? preferenceService;
 
-  const DailyBriefApp({super.key, this.ttsService});
+  const DailyBriefApp({
+    super.key,
+    this.ttsService,
+    this.preferenceService,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +24,10 @@ class DailyBriefApp extends StatelessWidget {
       title: 'DailyBrief',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: SplashScreen(ttsService: ttsService),
+      home: SplashScreen(
+        ttsService: ttsService,
+        preferenceService: preferenceService,
+      ),
     );
   }
 }

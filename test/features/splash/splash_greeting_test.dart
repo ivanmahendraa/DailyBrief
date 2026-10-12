@@ -5,12 +5,18 @@ import 'package:daily_brief/core/constants/app_strings.dart';
 import 'package:daily_brief/features/home/screens/home_screen.dart';
 import 'package:daily_brief/features/splash/screens/splash_screen.dart';
 import 'package:daily_brief/services/app_initializer.dart';
+import 'package:daily_brief/services/preference_service.dart';
 import 'package:daily_brief/services/tts_service.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fake TtsClient
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// Fake TtsClient untuk menyimulasikan siklus hidup Text-to-Speech secara deterministik
 /// pada widget test tanpa memanggil channel audio perangkat fisik.
 class _FakeTtsClient implements TtsClient {
   String? lastSpokenText;
+  final List<String> spokenTexts = [];
   int speakInvocationReturnCode = 1;
   bool shouldThrowOnSpeak = false;
   bool stopped = false;
@@ -44,6 +50,7 @@ class _FakeTtsClient implements TtsClient {
       throw Exception('Simulasi kegagalan native speak');
     }
     lastSpokenText = text;
+    spokenTexts.add(text);
     startHandler?.call();
     return speakInvocationReturnCode;
   }
@@ -84,9 +91,14 @@ class _FakeTtsClient implements TtsClient {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Fake AppInitializer
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// Fake AppInitializer yang dapat dikontrol.
 class _ControlledFakeInitializer extends AppInitializer {
-  final Completer<InitializationResult> _completer = Completer<InitializationResult>();
+  final Completer<InitializationResult> _completer =
+      Completer<InitializationResult>();
 
   void completeSuccess() {
     if (!_completer.isCompleted) {
@@ -106,6 +118,40 @@ class _ControlledFakeInitializer extends AppInitializer {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Fake PreferenceService
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Fake PreferenceService yang dapat dikonfigurasi untuk mengembalikan
+/// status kunjungan pertama atau kunjungan berulang secara deterministik.
+class _FakePreferenceService extends PreferenceService {
+  bool firstVisitValue;
+  bool markCompleted = false;
+
+  _FakePreferenceService({this.firstVisitValue = true}) : super();
+
+  @override
+  Future<bool> isFirstVisit() async => firstVisitValue;
+
+  @override
+  Future<bool> markFirstVisitCompleted() async {
+    markCompleted = true;
+    firstVisitValue = false;
+    return true;
+  }
+
+  @override
+  Future<bool> resetFirstVisit() async {
+    firstVisitValue = true;
+    markCompleted = false;
+    return true;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test Suite
+// ─────────────────────────────────────────────────────────────────────────────
+
 void main() {
   group('TASK-21 — Sapaan Kunjungan Pertama pada Splash Screen', () {
     late _FakeTtsClient fakeClient;
@@ -120,12 +166,15 @@ void main() {
         '1. Membacakan panduan awal yang benar dan belum pindah ke Home Screen selama sapaan berlangsung',
         (WidgetTester tester) async {
       final initializer = _ControlledFakeInitializer();
+      // Kunjungan pertama: isFirstVisit == true
+      final prefService = _FakePreferenceService(firstVisitValue: true);
 
       await tester.pumpWidget(
         MaterialApp(
           home: SplashScreen(
             initializer: initializer,
             ttsService: ttsService,
+            preferenceService: prefService,
           ),
         ),
       );
@@ -134,11 +183,11 @@ void main() {
       initializer.completeSuccess();
       await tester.pump();
 
-      // Verifikasi bahwa sapaan pertama dibacakan dengan teks panduan awal yang benar
+      // Verifikasi bahwa sapaan pertama dibacakan dengan teks kunjungan pertama
       expect(fakeClient.lastSpokenText, AppStrings.firstVisitGreeting);
       expect(
         fakeClient.lastSpokenText,
-        'Selamat datang di DailyBrief. Saya siap membantu memberikan informasi harian. Sentuh area utama layar untuk mulai bertanya.',
+        'Selamat datang di DailyBrief.',
       );
 
       // Selama sapaan belum selesai, HomeScreen belum ditampilkan
@@ -153,12 +202,65 @@ void main() {
       // Setelah sapaan selesai diputar, navigasi ke HomeScreen berhasil
       expect(find.byType(HomeScreen), findsOneWidget);
       expect(find.byType(SplashScreen), findsNothing);
+
+      // Verifikasi pesan kedua dibacakan setelah Home Screen terbuka
+      expect(fakeClient.lastSpokenText, AppStrings.homeGreeting);
+      expect(fakeClient.lastSpokenText, 'Temukan informasi dalam satu sentuhan.');
+      expect(fakeClient.spokenTexts, [
+        AppStrings.firstVisitGreeting,
+        AppStrings.homeGreeting,
+      ]);
+
+      // Verifikasi status kunjungan pertama ditandai selesai
+      expect(prefService.markCompleted, isTrue);
+
+      // Verifikasi bahwa dispose() pada SplashScreen TIDAK memanggil stop() pada TTS kedua
+      expect(fakeClient.stopped, isFalse);
+
+      // Verifikasi pengamanan: jika HomeScreen benar-benar di-dispose (pengguna keluar),
+      // audio TTS dihentikan
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(fakeClient.stopped, isTrue);
     });
 
     testWidgets(
-        '2. Langsung melanjutkan ke Home Screen jika terjadi kegagalan TTS (error callback)',
+        '2. Membacakan sapaan kunjungan berulang jika bukan kunjungan pertama',
         (WidgetTester tester) async {
       final initializer = _ControlledFakeInitializer();
+      // Kunjungan berulang: isFirstVisit == false
+      final prefService = _FakePreferenceService(firstVisitValue: false);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SplashScreen(
+            initializer: initializer,
+            ttsService: ttsService,
+            preferenceService: prefService,
+          ),
+        ),
+      );
+
+      initializer.completeSuccess();
+      await tester.pump();
+
+      // Verifikasi sapaan kunjungan berulang digunakan
+      expect(fakeClient.lastSpokenText, AppStrings.returningVisitGreeting);
+      expect(fakeClient.lastSpokenText, 'Selamat datang kembali di DailyBrief.');
+
+      // markCompleted tidak dipanggil untuk kunjungan berulang
+      expect(prefService.markCompleted, isFalse);
+
+      fakeClient.triggerCompletion();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsOneWidget);
+    });
+
+    testWidgets(
+        '3. Langsung melanjutkan ke Home Screen jika terjadi kegagalan TTS (error callback)',
+        (WidgetTester tester) async {
+      final initializer = _ControlledFakeInitializer();
+      final prefService = _FakePreferenceService(firstVisitValue: true);
       TtsPlaybackResult? completedResult;
 
       await tester.pumpWidget(
@@ -166,6 +268,7 @@ void main() {
           home: SplashScreen(
             initializer: initializer,
             ttsService: ttsService,
+            preferenceService: prefService,
             onGreetingCompleted: (result) {
               completedResult = result;
             },
@@ -190,10 +293,11 @@ void main() {
     });
 
     testWidgets(
-        '3. Langsung melanjutkan ke Home Screen jika pemanggilan speak melempar exception',
+        '4. Langsung melanjutkan ke Home Screen jika pemanggilan speak melempar exception',
         (WidgetTester tester) async {
       fakeClient.shouldThrowOnSpeak = true;
       final initializer = _ControlledFakeInitializer();
+      final prefService = _FakePreferenceService(firstVisitValue: true);
       TtsPlaybackResult? completedResult;
 
       await tester.pumpWidget(
@@ -201,6 +305,7 @@ void main() {
           home: SplashScreen(
             initializer: initializer,
             ttsService: ttsService,
+            preferenceService: prefService,
             onGreetingCompleted: (result) {
               completedResult = result;
             },
@@ -218,15 +323,17 @@ void main() {
     });
 
     testWidgets(
-        '4. Sapaan tidak diputar jika inisialisasi layanan dasar gagal',
+        '5. Sapaan tidak diputar jika inisialisasi layanan dasar gagal',
         (WidgetTester tester) async {
       final initializer = _ControlledFakeInitializer();
+      final prefService = _FakePreferenceService(firstVisitValue: true);
 
       await tester.pumpWidget(
         MaterialApp(
           home: SplashScreen(
             initializer: initializer,
             ttsService: ttsService,
+            preferenceService: prefService,
           ),
         ),
       );
@@ -241,15 +348,17 @@ void main() {
     });
 
     testWidgets(
-        '5. Menghentikan pemutaran suara jika SplashScreen di-dispose saat berbicara',
+        '6. Menghentikan pemutaran suara jika SplashScreen di-dispose saat berbicara',
         (WidgetTester tester) async {
       final initializer = _ControlledFakeInitializer();
+      final prefService = _FakePreferenceService(firstVisitValue: true);
 
       await tester.pumpWidget(
         MaterialApp(
           home: SplashScreen(
             initializer: initializer,
             ttsService: ttsService,
+            preferenceService: prefService,
             navigateToHome: false, // Jangan auto-navigate untuk mengontrol siklus hidup widget
           ),
         ),

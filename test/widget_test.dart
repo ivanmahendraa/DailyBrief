@@ -5,6 +5,7 @@ import 'package:daily_brief/app.dart';
 import 'package:daily_brief/features/home/screens/home_screen.dart';
 import 'package:daily_brief/features/splash/screens/splash_screen.dart';
 import 'package:daily_brief/services/app_initializer.dart';
+import 'package:daily_brief/services/preference_service.dart';
 import 'package:daily_brief/services/tts_service.dart';
 
 /// Fake implementation of [TtsClient] yang segera menyelesaikan pemutaran suara
@@ -81,6 +82,19 @@ class _ControlledFakeInitializer extends AppInitializer {
   }
 }
 
+/// Fake PreferenceService yang segera mengembalikan isFirstVisit = true
+/// tanpa memanggil SharedPreferences.getInstance() yang membutuhkan platform channel.
+class _ImmediateFakePreferenceService extends PreferenceService {
+  @override
+  Future<bool> isFirstVisit() async => true;
+
+  @override
+  Future<bool> markFirstVisitCompleted() async => true;
+
+  @override
+  Future<bool> resetFirstVisit() async => true;
+}
+
 void main() {
   group('TASK-10: Alur Splash Screen dan Navigasi Terkontrol', () {
     late TtsService immediateTtsService;
@@ -91,7 +105,10 @@ void main() {
 
     testWidgets('1. Splash Screen ditampilkan pada awal peluncuran aplikasi',
         (WidgetTester tester) async {
-      await tester.pumpWidget(DailyBriefApp(ttsService: immediateTtsService));
+      await tester.pumpWidget(DailyBriefApp(
+        ttsService: immediateTtsService,
+        preferenceService: _ImmediateFakePreferenceService(),
+      ));
 
       // Verifikasi identitas dan komponen Splash Screen pada peluncuran
       expect(find.byType(SplashScreen), findsOneWidget);
@@ -111,6 +128,7 @@ void main() {
           home: SplashScreen(
             initializer: controlledInitializer,
             ttsService: immediateTtsService,
+            preferenceService: _ImmediateFakePreferenceService(),
           ),
         ),
       );
@@ -136,6 +154,7 @@ void main() {
           home: SplashScreen(
             initializer: controlledInitializer,
             ttsService: immediateTtsService,
+            preferenceService: _ImmediateFakePreferenceService(),
           ),
         ),
       );
@@ -151,7 +170,7 @@ void main() {
       // Status akhir: Berpindah ke HomeScreen dan SplashScreen digantikan
       expect(find.byType(HomeScreen), findsOneWidget);
       expect(find.byType(SplashScreen), findsNothing);
-      expect(find.text('Halaman Utama DailyBrief'), findsOneWidget);
+      expect(find.text('DailyBrief'), findsOneWidget);
     });
 
     testWidgets('4. Inisialisasi gagal tidak menyebabkan navigasi dan menampilkan pesan error',
@@ -163,6 +182,7 @@ void main() {
           home: SplashScreen(
             initializer: controlledInitializer,
             ttsService: immediateTtsService,
+            preferenceService: _ImmediateFakePreferenceService(),
           ),
         ),
       );
@@ -193,6 +213,7 @@ void main() {
           home: SplashScreen(
             initializer: controlledInitializer,
             ttsService: immediateTtsService,
+            preferenceService: _ImmediateFakePreferenceService(),
           ),
         ),
       );

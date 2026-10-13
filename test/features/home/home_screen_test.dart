@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:daily_brief/core/constants/app_strings.dart';
 import 'package:daily_brief/core/theme/app_theme.dart';
@@ -68,12 +69,14 @@ void main() {
     Widget buildTestableHomeScreen({
       TtsService? ttsService,
       void Function(TtsPlaybackResult result)? onGreetingCompleted,
+      VoidCallback? onTouchAreaTap,
     }) {
       return MaterialApp(
         theme: AppTheme.lightTheme,
         home: HomeScreen(
           ttsService: ttsService ?? TtsService(client: _FakeTtsClient()),
           onGreetingCompleted: onGreetingCompleted,
+          onTouchAreaTap: onTouchAreaTap,
         ),
       );
     }
@@ -284,6 +287,92 @@ void main() {
 
       // Audio dihentikan agar tidak menggantung
       expect(fakeClient.stopped, isTrue);
+    });
+
+    testWidgets(
+        '12. Menekan area sentuh utama memanggil callback onTouchAreaTap (TASK-25)',
+        (WidgetTester tester) async {
+      int tapCount = 0;
+
+      // Fake TTS client yang langsung menyelesaikan speak() via microtask
+      // sehingga greeting selesai dan pumpAndSettle() tidak menggantung
+      final autoClient = _FakeTtsClient();
+
+      await tester.pumpWidget(
+        buildTestableHomeScreen(
+          ttsService: TtsService(client: autoClient),
+          onTouchAreaTap: () => tapCount++,
+        ),
+      );
+
+      // Selesaikan greeting awal HomeScreen
+      await tester.pump(); // frame pertama (postFrameCallback)
+      autoClient.triggerCompletion(); // simulasikan TTS selesai
+      await tester.pump(); // proses completion
+
+      // Setup mock HapticFeedback channel agar await-nya resolve di test environment
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (MethodCall methodCall) async => null,
+      );
+
+      // Temukan InkWell area sentuh via Key yang terdaftar
+      final inkWellFinder = find.byKey(const Key('touch_area_inkwell'));
+      expect(inkWellFinder, findsOneWidget);
+
+      // Ketuk area sentuh
+      await tester.tap(inkWellFinder);
+      await tester.pump(Duration.zero);
+      await tester.pump(Duration.zero);
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // Callback onTouchAreaTap harus dipanggil tepat sekali
+      expect(tapCount, equals(1));
+
+      // Cleanup mock
+      tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    testWidgets(
+        '13. Area sentuh tetap merespons dengan haptic meski onTouchAreaTap null',
+        (WidgetTester tester) async {
+      // onTouchAreaTap tidak diteruskan (null) — perilaku default sebelum VoiceController terpasang
+      final autoClient = _FakeTtsClient();
+
+      await tester.pumpWidget(
+        buildTestableHomeScreen(
+          ttsService: TtsService(client: autoClient),
+        ),
+      );
+
+      // Selesaikan greeting awal
+      await tester.pump();
+      autoClient.triggerCompletion();
+      await tester.pump();
+
+      // Setup mock HapticFeedback channel
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (MethodCall methodCall) async => null,
+      );
+
+      // Temukan InkWell area sentuh via Key
+      final inkWellFinder = find.byKey(const Key('touch_area_inkwell'));
+      expect(inkWellFinder, findsOneWidget);
+
+      // Ketuk tidak boleh throw exception meski callback null
+      await tester.tap(inkWellFinder);
+      await tester.pump(Duration.zero);
+      await tester.pump(Duration.zero);
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // Tidak ada exception = null-safe callback berjalan dengan benar
+      expect(tester.takeException(), isNull);
+
+      // Cleanup mock
+      tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
     });
   });
 }

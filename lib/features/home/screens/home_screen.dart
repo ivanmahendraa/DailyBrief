@@ -169,10 +169,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: AppColors.surfaceVariant,
                     borderRadius: BorderRadius.circular(28),
                     child: InkWell(
+                      key: const Key('touch_area_inkwell'),
                       borderRadius: BorderRadius.circular(28),
                       onTap: _handleTouchAreaTap,
-                      splashColor: AppColors.primaryContainer.withOpacity(0.5),
-                      highlightColor: AppColors.primaryContainer.withOpacity(0.2),
+                      splashColor: AppColors.primaryContainer.withValues(alpha: 0.5),
+                      highlightColor: AppColors.primaryContainer.withValues(alpha: 0.2),
                       child: Container(
                         width: double.infinity,
                         decoration: BoxDecoration(

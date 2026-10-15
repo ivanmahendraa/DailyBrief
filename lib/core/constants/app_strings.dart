@@ -5,18 +5,18 @@ class AppStrings {
   /// Nama aplikasi (TASK-12).
   static const String appName = 'DailyBrief';
 
-  /// Sapaan suara kunjungan pertama pada Splash Screen (FR-02, TASK-21).
-  static const String firstVisitGreeting = 'Selamat datang di DailyBrief.';
+  /// Sapaan singkat pada Splash Screen setiap kali aplikasi dibuka.
+  static const String splashGreeting =
+      'Selamat datang di DailyBrief. Sentuh area utama untuk mulai berinteraksi dengan aplikasi.';
 
-  /// Sapaan suara kunjungan berikutnya pada Splash Screen (FR-02, TASK-23).
-  static const String returningVisitGreeting =
-      'Selamat datang kembali di DailyBrief.';
-
-  /// Pesan suara pengantar setelah Home Screen terbuka.
-  static const String homeGreeting = 'Temukan informasi dalam satu sentuhan.';
+  /// Konfirmasi suara sebelum pengenalan ucapan dimulai.
+  static const String voiceConfirmation = 'Silakan berbicara.';
 
   /// Status interaksi awal (FR-03, TASK-12).
   static const String statusReady = 'Siap Digunakan';
+
+  /// Status ketika aplikasi membacakan konfirmasi sebelum mendengarkan.
+  static const String statusConfirming = 'Mengonfirmasi';
 
   /// Judul area interaksi utama (TASK-12).
   static const String touchAreaTitle = 'Area Sentuh Utama';

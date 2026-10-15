@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import '../../../core/constants/app_strings.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../services/speech_to_text_service.dart';
 import '../../../services/tts_service.dart';
+import '../../voice/voice_controller.dart';
 
 /// Halaman Utama (Home Screen) DailyBrief dengan konsep Daily Horizon.
 ///
@@ -12,18 +17,18 @@ import '../../../services/tts_service.dart';
 /// - Area interaksi utama yang diperbesar dengan pengikatan event sentuh (onTap)
 ///   dan umpan balik getaran haptik (HapticFeedback, TASK-14, TASK-25).
 /// - Petunjuk daftar perintah suara di bagian bawah.
-/// - Pemutaran sapaan suara pengantar ("Temukan informasi dalam satu sentuhan.") sekali
-///   setelah Home Screen terbuka.
 class HomeScreen extends StatefulWidget {
-  final TtsService? ttsService;
-  final void Function(TtsPlaybackResult result)? onGreetingCompleted;
   final VoidCallback? onTouchAreaTap;
+  final VoiceController? voiceController;
+  final SpeechToTextService? speechToTextService;
+  final TtsService? ttsService;
 
   const HomeScreen({
     super.key,
-    this.ttsService,
-    this.onGreetingCompleted,
     this.onTouchAreaTap,
+    this.voiceController,
+    this.speechToTextService,
+    this.ttsService,
   });
 
   @override
@@ -31,50 +36,79 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late final TtsService _ttsService;
-  bool _hasSpokenGreeting = false;
+  late VoiceController _voiceController;
+  bool _handlingTouch = false;
 
   @override
   void initState() {
     super.initState();
-    _ttsService = widget.ttsService ?? TtsService();
-    _playGreeting();
+    _voiceController = _createVoiceController();
+    _voiceController.addListener(_handleControllerChange);
   }
 
-  Future<void> _playGreeting() async {
-    if (_hasSpokenGreeting) return;
-    _hasSpokenGreeting = true;
+  VoiceController _createVoiceController() =>
+      widget.voiceController ??
+      VoiceController(
+        speechToTextService: widget.speechToTextService,
+        ttsService: widget.ttsService,
+      );
 
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      try {
-        final result = await _ttsService.speak(AppStrings.homeGreeting);
-        if (!mounted) return;
-        widget.onGreetingCompleted?.call(result);
-      } catch (error) {
-        debugPrint('HomeScreen TTS greeting playback error: $error');
-        if (!mounted) return;
-        widget.onGreetingCompleted?.call(
-          TtsPlaybackResult.failure('Gagal memutar sapaan Home: $error'),
-        );
-      }
-    });
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.voiceController == widget.voiceController &&
+        oldWidget.speechToTextService == widget.speechToTextService &&
+        oldWidget.ttsService == widget.ttsService) {
+      return;
+    }
+
+    _voiceController
+      ..removeListener(_handleControllerChange)
+      ..dispose();
+    _voiceController = _createVoiceController();
+    _voiceController.addListener(_handleControllerChange);
+  }
+
+  void _handleControllerChange() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _handleTouchAreaTap() async {
-    try {
-      await HapticFeedback.mediumImpact();
-    } catch (error) {
-      debugPrint('HomeScreen HapticFeedback error: $error');
+    if (!mounted ||
+        _handlingTouch ||
+        _voiceController.state != VoiceInteractionState.idle ||
+        _voiceController.hasActiveSession) {
+      return;
     }
-    widget.onTouchAreaTap?.call();
+    _handlingTouch = true;
+    try {
+      try {
+        await HapticFeedback.mediumImpact();
+      } catch (error) {
+        debugPrint('HomeScreen HapticFeedback error: $error');
+      }
+      if (!mounted) return;
+      unawaited(_voiceController.handleUserTap());
+      widget.onTouchAreaTap?.call();
+    } finally {
+      _handlingTouch = false;
+    }
   }
+
+  String get _statusLabel => switch (_voiceController.state) {
+    VoiceInteractionState.idle => AppStrings.statusReady,
+    VoiceInteractionState.confirming => AppStrings.statusConfirming,
+    VoiceInteractionState.listening => 'Mendengarkan',
+    VoiceInteractionState.processing => 'Memproses',
+    VoiceInteractionState.speaking => 'Berbicara',
+    VoiceInteractionState.error => 'Perlu perhatian',
+  };
 
   @override
   void dispose() {
-    if (_ttsService.isSpeaking) {
-      _ttsService.stop();
-    }
+    _voiceController
+      ..removeListener(_handleControllerChange)
+      ..dispose();
     super.dispose();
   }
 
@@ -119,7 +153,8 @@ class _HomeScreenState extends State<HomeScreen> {
               // 1. Status Interaksi Awal: Siap Digunakan
               Center(
                 child: Semantics(
-                  label: 'Status interaksi: ${AppStrings.statusReady}',
+                  liveRegion: true,
+                  label: 'Status interaksi: $_statusLabel',
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 18,
@@ -128,10 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     decoration: BoxDecoration(
                       color: AppColors.primaryContainer,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: AppColors.border,
-                        width: 1,
-                      ),
+                      border: Border.all(color: AppColors.border, width: 1),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -146,7 +178,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          AppStrings.statusReady,
+                          _statusLabel,
                           style: theme.textTheme.labelLarge?.copyWith(
                             color: AppColors.onPrimaryContainer,
                             fontWeight: FontWeight.w600,
@@ -158,6 +190,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 12),
+              if (_voiceController.errorMessage case final errorMessage?) ...[
+                Semantics(
+                  liveRegion: true,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      errorMessage,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppColors.error,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
 
               // 2. Area Interaksi Utama yang Diperbesar (Visual Focus & Interaksi Sentuh)
               Expanded(
@@ -172,16 +219,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       key: const Key('touch_area_inkwell'),
                       borderRadius: BorderRadius.circular(28),
                       onTap: _handleTouchAreaTap,
-                      splashColor: AppColors.primaryContainer.withValues(alpha: 0.5),
-                      highlightColor: AppColors.primaryContainer.withValues(alpha: 0.2),
+                      splashColor: AppColors.primaryContainer.withValues(
+                        alpha: 0.5,
+                      ),
+                      highlightColor: AppColors.primaryContainer.withValues(
+                        alpha: 0.2,
+                      ),
                       child: Container(
                         width: double.infinity,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(28),
-                          border: Border.all(
-                            color: AppColors.border,
-                            width: 2,
-                          ),
+                          border: Border.all(color: AppColors.border, width: 2),
                         ),
                         child: Center(
                           child: SingleChildScrollView(
@@ -218,10 +266,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                   Text(
                                     AppStrings.touchAreaTitle,
                                     textAlign: TextAlign.center,
-                                    style: theme.textTheme.headlineSmall?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.textPrimary,
-                                    ),
+                                    style: theme.textTheme.headlineSmall
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.textPrimary,
+                                        ),
                                   ),
                                   const SizedBox(height: 10),
 
@@ -259,10 +308,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   decoration: BoxDecoration(
                     color: AppColors.surface,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: AppColors.border,
-                      width: 1,
-                    ),
+                    border: Border.all(color: AppColors.border, width: 1),
                   ),
                   child: Text(
                     AppStrings.commandHints,

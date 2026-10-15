@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>DailyBrief menggunakan mikrofon untuk menerima perintah suara.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>DailyBrief menggunakan pengenalan suara untuk memahami ucapan Anda.</string>
 </dict>
 </plist>

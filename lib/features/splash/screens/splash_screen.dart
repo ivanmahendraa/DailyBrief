@@ -1,24 +1,23 @@
 import 'package:flutter/material.dart';
+
 import '../../../core/constants/app_strings.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../services/speech_to_text_service.dart';
 import '../../../services/app_initializer.dart';
-import '../../../services/preference_service.dart';
 import '../../../services/tts_service.dart';
 import '../../home/screens/home_screen.dart';
 
 /// Halaman Splash Screen DailyBrief.
 ///
 /// Menampilkan identitas aplikasi, logo/ikon, tagline, indikator pemuatan,
-/// menjalankan inisialisasi layanan dasar (TASK-09), membacakan panduan awal
-/// kunjungan pertama (TASK-21) atau sapaan kunjungan berikutnya (TASK-23) melalui
-/// Text-to-Speech sebelum Home Screen ditampilkan, menyimpan status kunjungan pertama
-/// menggunakan SharedPreferences hanya setelah sapaan selesai secara utuh (TASK-22, FR-02),
+/// menjalankan inisialisasi layanan dasar (TASK-09), lalu membacakan satu sapaan
+/// tetap melalui Text-to-Speech setiap kali aplikasi dibuka sebelum Home Screen,
 /// menunggu pemutaran selesai secara nyata tanpa penundaan tiruan (FR-01, FR-02),
 /// serta langsung melanjutkan ke Home Screen jika terjadi kegagalan TTS (TASK-10, TASK-21).
 class SplashScreen extends StatefulWidget {
   final AppInitializer initializer;
   final TtsService? ttsService;
-  final PreferenceService? preferenceService;
+  final SpeechToTextService? speechToTextService;
   final VoidCallback? onInitialized;
   final void Function(TtsPlaybackResult result)? onGreetingCompleted;
   final bool navigateToHome;
@@ -27,7 +26,7 @@ class SplashScreen extends StatefulWidget {
     super.key,
     this.initializer = const AppInitializer(),
     this.ttsService,
-    this.preferenceService,
+    this.speechToTextService,
     this.onInitialized,
     this.onGreetingCompleted,
     this.navigateToHome = true,
@@ -39,7 +38,7 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> {
   late final TtsService _ttsService;
-  late final PreferenceService _preferenceService;
+  bool _isInitializing = false;
   String? _errorMessage;
   bool _isNavigating = false;
 
@@ -47,7 +46,6 @@ class _SplashScreenState extends State<SplashScreen> {
   void initState() {
     super.initState();
     _ttsService = widget.ttsService ?? TtsService();
-    _preferenceService = widget.preferenceService ?? PreferenceService();
     _startInitialization();
   }
 
@@ -55,8 +53,7 @@ class _SplashScreenState extends State<SplashScreen> {
   void dispose() {
     // Hanya hentikan TTS jika SplashScreen di-dispose secara prematur
     // (misalnya aplikasi ditutup sebelum navigasi ke HomeScreen berlangsung).
-    // Jika navigasi ke HomeScreen sedang berlangsung (_isNavigating == true),
-    // jangan panggil stop() agar tidak memotong sapaan kedua di HomeScreen.
+    // Saat navigasi normal dimulai, biarkan sapaan Splash selesai tanpa dipotong.
     if (!_isNavigating && _ttsService.isSpeaking) {
       _ttsService.stop();
     }
@@ -64,57 +61,68 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _startInitialization() async {
-    if (!mounted) return;
+    if (!mounted || _isInitializing) return;
+    _isInitializing = true;
 
     setState(() {
       _errorMessage = null;
-      _isNavigating = false;
     });
 
-    final result = await widget.initializer.initialize();
-
-    if (!mounted) return;
-
-    if (result.isSuccess) {
-      widget.onInitialized?.call();
-
-      // TASK-21, TASK-22, TASK-23: Membacakan sapaan kunjungan pertama atau kunjungan berikutnya
-      // pada Splash Screen sebelum Home Screen ditampilkan, menunggu pemutaran sapaan selesai
-      // secara nyata sebelum navigasi ke Home Screen, dan langsung melanjutkan jika terjadi kegagalan.
-      await _playGreetingFlow();
-
+    try {
+      final result = await widget.initializer.initialize();
       if (!mounted) return;
 
-      if (widget.navigateToHome && !_isNavigating) {
-        _navigateToHome();
+      if (!result.isSuccess) {
+        setState(() {
+          _errorMessage = result.errorMessage;
+        });
+        return;
       }
-    } else {
+
+      _notifyInitialized();
+      final playbackResult = await _playGreeting();
+      if (!mounted) return;
+
+      _notifyGreetingCompleted(playbackResult);
+      if (widget.navigateToHome) _navigateToHome();
+    } catch (error, stackTrace) {
+      debugPrint('SplashScreen initialization flow error: $error\n$stackTrace');
+      if (!mounted) return;
       setState(() {
-        _errorMessage = result.errorMessage;
+        _errorMessage =
+            'Gagal menyiapkan aplikasi. Sentuh coba lagi untuk mengulang.';
       });
+    } finally {
+      _isInitializing = false;
+      if (mounted) setState(() {});
     }
   }
 
-  Future<void> _playGreetingFlow() async {
-    final isFirstVisit = await _preferenceService.isFirstVisit();
-    final greetingText = isFirstVisit
-        ? AppStrings.firstVisitGreeting
-        : AppStrings.returningVisitGreeting;
-
+  Future<TtsPlaybackResult> _playGreeting() async {
     try {
-      final playbackResult = await _ttsService.speak(greetingText);
-
-      // FR-02, TASK-22: Status kunjungan pertama hanya diperbarui sebagai berhasil
-      // setelah sapaan pertama berhasil selesai diputar secara utuh.
-      if (playbackResult.isSuccess && isFirstVisit) {
-        await _preferenceService.markFirstVisitCompleted();
-      }
-
-      widget.onGreetingCompleted?.call(playbackResult);
+      return await _ttsService.speak(AppStrings.splashGreeting);
     } catch (error) {
       debugPrint('SplashScreen TTS greeting playback error: $error');
-      widget.onGreetingCompleted?.call(
-        TtsPlaybackResult.failure('Gagal memutar sapaan: $error'),
+      return TtsPlaybackResult.failure('Gagal memutar sapaan: $error');
+    }
+  }
+
+  void _notifyInitialized() {
+    try {
+      widget.onInitialized?.call();
+    } catch (error, stackTrace) {
+      debugPrint(
+        'SplashScreen onInitialized callback error: $error\n$stackTrace',
+      );
+    }
+  }
+
+  void _notifyGreetingCompleted(TtsPlaybackResult result) {
+    try {
+      widget.onGreetingCompleted?.call(result);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'SplashScreen onGreetingCompleted callback error: $error\n$stackTrace',
       );
     }
   }
@@ -127,7 +135,10 @@ class _SplashScreenState extends State<SplashScreen> {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) => HomeScreen(ttsService: _ttsService),
+          builder: (_) => HomeScreen(
+            speechToTextService: widget.speechToTextService,
+            ttsService: _ttsService,
+          ),
         ),
       );
     });
@@ -156,10 +167,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.primaryContainer,
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.border,
-                    width: 1.5,
-                  ),
+                  border: Border.all(color: AppColors.border, width: 1.5),
                 ),
                 child: Image.asset(
                   'assets/images/daily_horizon_icon.png',
@@ -218,7 +226,9 @@ class _SplashScreenState extends State<SplashScreen> {
                         ),
                         const SizedBox(height: 16),
                         ElevatedButton.icon(
-                          onPressed: _startInitialization,
+                          onPressed: _isInitializing
+                              ? null
+                              : _startInitialization,
                           icon: const Icon(Icons.refresh_rounded),
                           label: const Text('Coba Lagi'),
                         ),
@@ -235,7 +245,9 @@ class _SplashScreenState extends State<SplashScreen> {
                     height: 28,
                     child: CircularProgressIndicator(
                       strokeWidth: 3,
-                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.primary,
+                      ),
                     ),
                   ),
                 ),

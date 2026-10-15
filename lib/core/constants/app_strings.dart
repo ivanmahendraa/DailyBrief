@@ -7,7 +7,7 @@ class AppStrings {
 
   /// Sapaan singkat pada Splash Screen setiap kali aplikasi dibuka.
   static const String splashGreeting =
-      'Selamat datang di DailyBrief. Sentuh area utama untuk mulai berinteraksi dengan aplikasi.';
+      'Selamat datang di DailyBrief. Temukan Informasi dalam Satu Sentuhan.';
 
   /// Konfirmasi suara sebelum pengenalan ucapan dimulai.
   static const String voiceConfirmation = 'Silakan berbicara.';

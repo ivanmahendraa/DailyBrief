@@ -221,7 +221,7 @@ void main() {
       await harness.start();
 
       expect(harness.ttsService.spokenTexts, [AppStrings.voiceConfirmation]);
-      expect(harness.controller.state, VoiceInteractionState.error);
+      expect(harness.controller.state, VoiceInteractionState.idle);
       expect(
         harness.controller.errorMessage,
         VoiceController.confirmationFailureMessage,
@@ -266,12 +266,12 @@ void main() {
         final harness = _Harness();
         await harness.startAndConfirmListening();
 
-        harness.speechClient.emitResult('hari ini', isFinal: false);
+        harness.speechClient.emitResult('ucapan tidak dikenal', isFinal: false);
         expect(harness.controller.state, VoiceInteractionState.listening);
-        expect(harness.controller.recognizedText, 'hari ini');
+        expect(harness.controller.recognizedText, 'ucapan tidak dikenal');
 
-        harness.speechClient.emitResult('hari ini', isFinal: true);
-        harness.speechClient.emitResult('hari ini', isFinal: true);
+        harness.speechClient.emitResult('ucapan tidak dikenal', isFinal: true);
+        harness.speechClient.emitResult('ucapan tidak dikenal', isFinal: true);
         expect(harness.controller.state, VoiceInteractionState.processing);
         expect(harness.ttsService.responseCallCount, 0);
 
@@ -291,18 +291,53 @@ void main() {
     );
 
     test(
-      'empty final result ends safely without speaking a success response',
+      'empty final result speaks the unsupported-command response',
       () async {
         final harness = _Harness();
         await harness.startAndConfirmListening();
         await harness.emitFinalAndComplete('   ');
 
-        expect(harness.ttsService.responseCallCount, 0);
+        expect(harness.ttsService.responseCallCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          VoiceController.unsupportedCommandResponse,
+        );
         expect(harness.controller.state, VoiceInteractionState.idle);
         expect(harness.controller.errorMessage, isNull);
         harness.controller.dispose();
       },
     );
+
+    test(
+      'speaks the unsupported-command response when no result is received',
+      () async {
+        final harness = _Harness();
+        await harness.startAndConfirmListening();
+
+        harness.speechClient.emitStatus('done');
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(harness.ttsService.responseCallCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          VoiceController.unsupportedCommandResponse,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      },
+    );
+
+    test('recognized command is not reported as unsupported', () async {
+      final harness = _Harness();
+      await harness.startAndConfirmListening();
+      await harness.emitFinalAndComplete('hari ini');
+
+      expect(harness.ttsService.responseCallCount, 0);
+      expect(harness.controller.state, VoiceInteractionState.idle);
+      expect(harness.controller.hasActiveSession, isFalse);
+      harness.controller.dispose();
+    });
 
     test('cancel clears the active session without speaking', () async {
       final harness = _Harness();
@@ -318,17 +353,18 @@ void main() {
     });
 
     test(
-      'initialization unavailable reports a safe error and can reset to idle',
+      'initialization unavailable returns to idle and retains an error message',
       () async {
         final harness = _Harness()..speechClient.initializeAvailable = false;
         await harness.start();
 
-        expect(harness.controller.state, VoiceInteractionState.error);
+        expect(harness.controller.state, VoiceInteractionState.idle);
         expect(harness.controller.errorMessage, isNotEmpty);
         expect(harness.ttsService.responseCallCount, 0);
 
         harness.controller.resetError();
         expect(harness.controller.state, VoiceInteractionState.idle);
+        expect(harness.controller.errorMessage, isNull);
         harness.controller.dispose();
       },
     );
@@ -343,7 +379,7 @@ void main() {
           permanent: true,
         );
 
-        expect(permissionHarness.controller.state, VoiceInteractionState.error);
+        expect(permissionHarness.controller.state, VoiceInteractionState.idle);
         expect(
           permissionHarness.controller.errorMessage,
           VoiceController.permissionDeniedMessage,
@@ -355,7 +391,7 @@ void main() {
         errorHarness.speechClient.emitError('error_network');
         await Future<void>.delayed(Duration.zero);
 
-        expect(errorHarness.controller.state, VoiceInteractionState.error);
+        expect(errorHarness.controller.state, VoiceInteractionState.idle);
         expect(
           errorHarness.controller.errorMessage,
           VoiceController.sessionFailureMessage,
@@ -369,7 +405,7 @@ void main() {
       final harness = _Harness()..speechClient.throwOnListen = true;
       await harness.start();
 
-      expect(harness.controller.state, VoiceInteractionState.error);
+      expect(harness.controller.state, VoiceInteractionState.idle);
       expect(
         harness.controller.errorMessage,
         VoiceController.startFailureMessage,
@@ -385,7 +421,10 @@ void main() {
         final harness = _Harness();
         harness.ttsService.pendingPlayback = Completer<TtsPlaybackResult>();
         await harness.startAndConfirmListening();
-        harness.speechClient.emitResult('lokasi', isFinal: true);
+        harness.speechClient.emitResult(
+          'tolong lakukan sesuatu',
+          isFinal: true,
+        );
         harness.speechClient.emitStatus('done');
         await Future<void>.delayed(Duration.zero);
         await Future<void>.delayed(Duration.zero);
@@ -412,9 +451,9 @@ void main() {
       () async {
         final failedHarness = _Harness()..ttsService.throwOnSpeak = true;
         await failedHarness.startAndConfirmListening();
-        await failedHarness.emitFinalAndComplete('waktu');
+        await failedHarness.emitFinalAndComplete('tolong lakukan sesuatu');
 
-        expect(failedHarness.controller.state, VoiceInteractionState.error);
+        expect(failedHarness.controller.state, VoiceInteractionState.idle);
         expect(
           failedHarness.controller.errorMessage,
           VoiceController.playbackFailureMessage,
@@ -424,7 +463,7 @@ void main() {
         final cancelledHarness = _Harness()
           ..ttsService.playbackResult = TtsPlaybackResult.cancelled();
         await cancelledHarness.startAndConfirmListening();
-        await cancelledHarness.emitFinalAndComplete('cuaca');
+        await cancelledHarness.emitFinalAndComplete('tolong lakukan sesuatu');
 
         expect(cancelledHarness.controller.state, VoiceInteractionState.idle);
         expect(
@@ -463,7 +502,14 @@ void main() {
         expect(initializeFailure.ttsService.initializeCallCount, 1);
         expect(initializeFailure.ttsService.speakCallCount, 0);
         expect(initializeFailure.speechClient.listenCallCount, 0);
-        expect(initializeFailure.controller.state, VoiceInteractionState.error);
+        expect(
+          initializeFailure.controller.state,
+          VoiceInteractionState.idle,
+        );
+        expect(
+          initializeFailure.controller.errorMessage,
+          VoiceController.confirmationFailureMessage,
+        );
         initializeFailure.controller.dispose();
 
         final activePlayback = _Harness();

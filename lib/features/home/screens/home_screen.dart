@@ -130,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> {
               fit: BoxFit.contain,
               semanticLabel: 'Simbol Daily Horizon',
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 4),
             Text(
               AppStrings.appName,
               style: theme.textTheme.titleLarge?.copyWith(

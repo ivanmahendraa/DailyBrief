@@ -464,6 +464,30 @@ void main() {
     );
 
     testWidgets(
+      'menampilkan pesan error yang dapat dibaca saat status kembali siap',
+      (WidgetTester tester) async {
+        const message = 'Izin mikrofon belum diberikan.';
+        final controller = _FakeVoiceController();
+        await tester.pumpWidget(
+          buildTestableHomeScreen(voiceController: controller),
+        );
+
+        controller.emitState(VoiceInteractionState.idle, errorMessage: message);
+        await tester.pump();
+
+        expect(find.text(AppStrings.statusReady), findsOneWidget);
+        expect(find.text(message), findsOneWidget);
+        expect(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is Semantics && widget.properties.liveRegion == true,
+          ),
+          findsNWidgets(2),
+        );
+      },
+    );
+
+    testWidgets(
       '9. Menekan area sentuh utama memanggil callback onTouchAreaTap (TASK-25)',
       (WidgetTester tester) async {
         int tapCount = 0;

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../core/constants/app_strings.dart';
+import 'command_parser.dart';
 import '../../services/speech_to_text_service.dart';
 import '../../services/tts_service.dart';
 
@@ -33,6 +34,7 @@ class VoiceController extends ChangeNotifier {
 
   final SpeechToTextService _speechToTextService;
   final TtsService _ttsService;
+  final CommandParser _commandParser = const CommandParser();
 
   VoiceInteractionState _state = VoiceInteractionState.idle;
   String? _errorMessage;
@@ -162,16 +164,15 @@ class VoiceController extends ChangeNotifier {
 
   Future<void> handleUserTap() async {
     if (_disposed) return;
-    if (_state == VoiceInteractionState.error) resetError();
     await startListening();
   }
 
-  /// Clears an error without starting another listening session.
+  /// Clears the visible error message without starting another session.
   void resetError() {
-    if (_disposed || _state != VoiceInteractionState.error) return;
+    if (_disposed || _errorMessage == null) return;
     _errorMessage = null;
     _recognizedText = '';
-    _setState(VoiceInteractionState.idle);
+    notifyListeners();
   }
 
   Future<void> cancel() async {
@@ -211,12 +212,13 @@ class VoiceController extends ChangeNotifier {
     if (status != SpeechEngineStatus.done) return;
 
     _sessionActive = false;
-    if (!_finalResultHandled || _recognizedText.trim().isEmpty) {
-      _finishSession();
+    if (!_finalResultHandled ||
+        _commandParser.parse(_recognizedText) == VoiceCommand.unknown) {
+      unawaited(_speakUnsupportedCommand(sessionId));
       return;
     }
 
-    unawaited(_speakUnsupportedCommand(sessionId));
+    _finishSession();
   }
 
   void _handleResult(int sessionId, SpeechRecognitionResult result) {
@@ -301,7 +303,7 @@ class VoiceController extends ChangeNotifier {
     _startInProgress = false;
     _cancelRequested = false;
     _errorMessage = message;
-    _setState(VoiceInteractionState.error);
+    _setState(VoiceInteractionState.idle);
   }
 
   void _setState(VoiceInteractionState state) {

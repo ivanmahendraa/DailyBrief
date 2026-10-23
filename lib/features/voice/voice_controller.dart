@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/constants/app_strings.dart';
 import '../../services/date_time_service.dart';
+import '../../services/geocoding_service.dart';
+import '../../services/location_service.dart';
 import '../../services/speech_to_text_service.dart';
 import '../../services/tts_service.dart';
 import 'command_parser.dart';
@@ -36,6 +38,8 @@ class VoiceController extends ChangeNotifier {
   final SpeechToTextService _speechToTextService;
   final DateTimeService _dateTimeService;
   final TtsService _ttsService;
+  final LocationService _locationService;
+  final GeocodingService _geocodingService;
   final CommandParser _commandParser = const CommandParser();
 
   VoiceInteractionState _state = VoiceInteractionState.idle;
@@ -53,9 +57,13 @@ class VoiceController extends ChangeNotifier {
     DateTimeService? dateTimeService,
     SpeechToTextService? speechToTextService,
     TtsService? ttsService,
+    LocationService? locationService,
+    GeocodingService? geocodingService,
   }) : _dateTimeService = dateTimeService ?? DateTimeService(),
        _speechToTextService = speechToTextService ?? SpeechToTextService(),
-       _ttsService = ttsService ?? TtsService();
+       _ttsService = ttsService ?? TtsService(),
+       _locationService = locationService ?? LocationService(),
+       _geocodingService = geocodingService ?? GeocodingService();
 
   VoiceInteractionState get state => _state;
 
@@ -181,7 +189,9 @@ class VoiceController extends ChangeNotifier {
 
   Future<void> cancel() async {
     if (_disposed ||
-        (!hasActiveSession && _state != VoiceInteractionState.speaking)) {
+        (!hasActiveSession &&
+            _state != VoiceInteractionState.speaking &&
+            _state != VoiceInteractionState.processing)) {
       return;
     }
     _cancelRequested = true;
@@ -226,10 +236,11 @@ class VoiceController extends ChangeNotifier {
         unawaited(_speakResponse(sessionId, _dateTimeService.currentDateResponse));
       case VoiceCommand.time:
         unawaited(_speakResponse(sessionId, _dateTimeService.currentTimeResponse));
+      case VoiceCommand.location:
+        unawaited(_handleLocationCommand(sessionId));
       case VoiceCommand.unknown:
         unawaited(_speakResponse(sessionId, unsupportedCommandResponse));
       case VoiceCommand.weather:
-      case VoiceCommand.location:
         _finishSession();
     }
   }
@@ -266,6 +277,59 @@ class VoiceController extends ChangeNotifier {
       return permissionDeniedMessage;
     }
     return sessionFailureMessage;
+  }
+
+  Future<void> _handleLocationCommand(int sessionId) async {
+    if (!_isCurrentSession(sessionId) || _disposed) return;
+
+    _setState(VoiceInteractionState.processing);
+
+    try {
+      final locationResult = await _locationService.getCurrentPosition();
+      if (!_isCurrentSession(sessionId) || _disposed) return;
+
+      if (!locationResult.isSuccess || locationResult.location == null) {
+        await _speakResponse(sessionId, locationResult.message);
+        return;
+      }
+
+      final coords = locationResult.location!;
+      final geocodingResult = await _geocodingService.reverseGeocode(
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      );
+      if (!_isCurrentSession(sessionId) || _disposed) return;
+
+      if (!geocodingResult.isSuccess || geocodingResult.address == null) {
+        await _speakResponse(sessionId, geocodingResult.message);
+        return;
+      }
+
+      final address = geocodingResult.address!;
+      final locationName = address.displayName;
+      if (locationName.isEmpty) {
+        await _speakResponse(
+          sessionId,
+          'Maaf, nama lokasi belum berhasil diketahui.',
+        );
+        return;
+      }
+
+      final responseText = address.placeName != null &&
+              address.placeName!.trim().isNotEmpty
+          ? 'Lokasi Anda berada di sekitar $locationName.'
+          : 'Lokasi Anda berada di $locationName.';
+
+      await _speakResponse(sessionId, responseText);
+    } catch (error, stackTrace) {
+      debugPrint('VoiceController location error: $error\n$stackTrace');
+      if (_isCurrentSession(sessionId) && !_disposed) {
+        await _speakResponse(
+          sessionId,
+          'Terjadi kesalahan saat memproses informasi lokasi.',
+        );
+      }
+    }
   }
 
   Future<void> _speakResponse(int sessionId, String response) async {

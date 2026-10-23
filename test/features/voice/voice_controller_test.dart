@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:daily_brief/core/constants/app_strings.dart';
 import 'package:daily_brief/features/voice/voice_controller.dart';
 import 'package:daily_brief/services/date_time_service.dart';
+import 'package:daily_brief/services/geocoding_service.dart';
+import 'package:daily_brief/services/location_service.dart';
 import 'package:daily_brief/services/speech_to_text_service.dart';
 import 'package:daily_brief/services/tts_service.dart';
 
@@ -140,14 +143,82 @@ class _FakeTtsService extends TtsService {
   }
 }
 
+class _FakeLocationService extends LocationService {
+  LocationResult resultToReturn = LocationResult.success(
+    Position(
+      latitude: 1.1301,
+      longitude: 104.0529,
+      timestamp: DateTime(2026, 10, 23),
+      accuracy: 5.0,
+      altitude: 10.0,
+      altitudeAccuracy: 1.0,
+      heading: 0.0,
+      headingAccuracy: 1.0,
+      speed: 0.0,
+      speedAccuracy: 0.0,
+    ),
+  );
+  int callCount = 0;
+  bool throwException = false;
+
+  _FakeLocationService() : super();
+
+  @override
+  Future<LocationResult> getCurrentPosition({
+    Duration timeout = const Duration(seconds: 10),
+    LocationSettings? locationSettings,
+  }) async {
+    callCount++;
+    if (throwException) throw StateError('LocationService crashed');
+    return resultToReturn;
+  }
+}
+
+class _FakeGeocodingService extends GeocodingService {
+  GeocodingResult resultToReturn = GeocodingResult.success(
+    const LocationAddress(
+      placeName: 'Mega Mall Batam',
+      city: 'Kota Batam',
+      province: 'Kepulauan Riau',
+      country: 'Indonesia',
+      formattedAddress: 'Jl. Engku Putri, Batam',
+    ),
+  );
+  int callCount = 0;
+  double? lastLatitude;
+  double? lastLongitude;
+  bool throwException = false;
+
+  _FakeGeocodingService() : super();
+
+  @override
+  Future<GeocodingResult> reverseGeocode({
+    required double latitude,
+    required double longitude,
+  }) async {
+    callCount++;
+    lastLatitude = latitude;
+    lastLongitude = longitude;
+    if (throwException) throw StateError('GeocodingService crashed');
+    return resultToReturn;
+  }
+}
+
 class _Harness {
-  _Harness({DateTimeService? dateTimeService})
-    : dateTimeService =
-          dateTimeService ?? DateTimeService(now: () => DateTime(2026, 10, 16));
+  _Harness({
+    DateTimeService? dateTimeService,
+    LocationService? locationService,
+    GeocodingService? geocodingService,
+  }) : dateTimeService =
+           dateTimeService ?? DateTimeService(now: () => DateTime(2026, 10, 16)),
+       locationService = locationService ?? _FakeLocationService(),
+       geocodingService = geocodingService ?? _FakeGeocodingService();
 
   final _FakeSpeechToTextClient speechClient = _FakeSpeechToTextClient();
   final _FakeTtsService ttsService = _FakeTtsService();
   final DateTimeService dateTimeService;
+  final LocationService locationService;
+  final GeocodingService geocodingService;
   late final SpeechToTextService speechService = SpeechToTextService(
     client: speechClient,
   );
@@ -155,6 +226,8 @@ class _Harness {
     dateTimeService: dateTimeService,
     speechToTextService: speechService,
     ttsService: ttsService,
+    locationService: locationService,
+    geocodingService: geocodingService,
   );
 
   Future<void> start() async {
@@ -587,5 +660,242 @@ void main() {
         expect(harness.ttsService.responseCallCount, 0);
       },
     );
+
+    group('location command (TASK-48)', () {
+      test('1. location command fetches coords, calls geocoding, and speaks formatted response with placeName', () async {
+        final fakeLocation = _FakeLocationService();
+        final fakeGeocoding = _FakeGeocodingService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          geocodingService: fakeGeocoding,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('lokasi saya');
+
+        expect(fakeLocation.callCount, 1);
+        expect(fakeGeocoding.callCount, 1);
+        expect(fakeGeocoding.lastLatitude, 1.1301);
+        expect(fakeGeocoding.lastLongitude, 104.0529);
+        expect(harness.ttsService.responseCallCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          'Lokasi Anda berada di sekitar Mega Mall Batam, Kota Batam.',
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        expect(harness.controller.hasActiveSession, isFalse);
+        harness.controller.dispose();
+      });
+
+      test('2. location command speaks response without placeName when only city is available', () async {
+        final fakeLocation = _FakeLocationService();
+        final fakeGeocoding = _FakeGeocodingService()
+          ..resultToReturn = GeocodingResult.success(
+            const LocationAddress(
+              city: 'Batam',
+              province: 'Kepulauan Riau',
+            ),
+          );
+        final harness = _Harness(
+          locationService: fakeLocation,
+          geocodingService: fakeGeocoding,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('di mana saya');
+
+        expect(
+          harness.ttsService.spokenText,
+          'Lokasi Anda berada di Batam, Kepulauan Riau.',
+        );
+        harness.controller.dispose();
+      });
+
+      test('3. location command speaks error when permission is denied', () async {
+        final fakeLocation = _FakeLocationService()
+          ..resultToReturn = LocationResult.permissionDenied();
+        final fakeGeocoding = _FakeGeocodingService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          geocodingService: fakeGeocoding,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('posisi saya');
+
+        expect(fakeLocation.callCount, 1);
+        expect(fakeGeocoding.callCount, 0);
+        expect(harness.ttsService.responseCallCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          LocationPermissionMessages.denied,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('4. location command speaks error when permission is denied forever', () async {
+        final fakeLocation = _FakeLocationService()
+          ..resultToReturn = LocationResult.permissionDeniedForever();
+        final fakeGeocoding = _FakeGeocodingService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          geocodingService: fakeGeocoding,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('lokasi');
+
+        expect(fakeLocation.callCount, 1);
+        expect(fakeGeocoding.callCount, 0);
+        expect(
+          harness.ttsService.spokenText,
+          LocationPermissionMessages.deniedForever,
+        );
+        harness.controller.dispose();
+      });
+
+      test('5. location command speaks error when location service/GPS is disabled', () async {
+        final fakeLocation = _FakeLocationService()
+          ..resultToReturn = LocationResult.serviceDisabled();
+        final fakeGeocoding = _FakeGeocodingService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          geocodingService: fakeGeocoding,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('saya dimana');
+
+        expect(fakeLocation.callCount, 1);
+        expect(fakeGeocoding.callCount, 0);
+        expect(
+          harness.ttsService.spokenText,
+          LocationPermissionMessages.serviceDisabled,
+        );
+        harness.controller.dispose();
+      });
+
+      test('6. location command speaks timeout error when coordinate fetch times out', () async {
+        final fakeLocation = _FakeLocationService()
+          ..resultToReturn = LocationResult.timeout();
+        final fakeGeocoding = _FakeGeocodingService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          geocodingService: fakeGeocoding,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('lokasi saya');
+
+        expect(fakeLocation.callCount, 1);
+        expect(fakeGeocoding.callCount, 0);
+        expect(
+          harness.ttsService.spokenText,
+          LocationMessages.timeout,
+        );
+        harness.controller.dispose();
+      });
+
+      test('7. location command speaks failure error when coordinate fetch fails', () async {
+        final fakeLocation = _FakeLocationService()
+          ..resultToReturn = LocationResult.failure('Gagal mengambil koordinat lokasi pengguna.');
+        final fakeGeocoding = _FakeGeocodingService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          geocodingService: fakeGeocoding,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('posisi saya');
+
+        expect(fakeLocation.callCount, 1);
+        expect(fakeGeocoding.callCount, 0);
+        expect(
+          harness.ttsService.spokenText,
+          contains('Gagal mengambil koordinat lokasi pengguna.'),
+        );
+        harness.controller.dispose();
+      });
+
+      test('8. location command speaks error when reverse geocoding returns not found', () async {
+        final fakeLocation = _FakeLocationService();
+        final fakeGeocoding = _FakeGeocodingService()
+          ..resultToReturn = GeocodingResult.notFound();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          geocodingService: fakeGeocoding,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('saya berada di mana');
+
+        expect(fakeLocation.callCount, 1);
+        expect(fakeGeocoding.callCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          GeocodingMessages.notFound,
+        );
+        harness.controller.dispose();
+      });
+
+      test('9. location command speaks network error when reverse geocoding network fails', () async {
+        final fakeLocation = _FakeLocationService();
+        final fakeGeocoding = _FakeGeocodingService()
+          ..resultToReturn = GeocodingResult.networkError();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          geocodingService: fakeGeocoding,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('lokasi');
+
+        expect(
+          harness.ttsService.spokenText,
+          GeocodingMessages.networkError,
+        );
+        harness.controller.dispose();
+      });
+
+      test('10. location command speaks unconfigured message without crashing when API is not configured', () async {
+        final fakeLocation = _FakeLocationService();
+        final fakeGeocoding = _FakeGeocodingService()
+          ..resultToReturn = GeocodingResult.unconfigured();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          geocodingService: fakeGeocoding,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('lokasi saya');
+
+        expect(
+          harness.ttsService.spokenText,
+          GeocodingMessages.unconfigured,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('11. location command handles exceptions from location service safely', () async {
+        final fakeLocation = _FakeLocationService()..throwException = true;
+        final fakeGeocoding = _FakeGeocodingService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          geocodingService: fakeGeocoding,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('lokasi saya');
+
+        expect(
+          harness.ttsService.spokenText,
+          'Terjadi kesalahan saat memproses informasi lokasi.',
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+    });
   });
 }

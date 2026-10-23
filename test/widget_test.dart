@@ -149,47 +149,48 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    testWidgets('TTS Service yang sama dipakai Splash dan interaksi Home', (
-      WidgetTester tester,
-    ) async {
-      final ttsClient = _ImmediateFakeTtsClient();
-      final speechClient = _AppFlowSpeechClient();
-      final ttsService = TtsService(client: ttsClient);
+    testWidgets(
+      'TTS Service yang sama dipakai sapaan Home dan interaksi suara',
+      (WidgetTester tester) async {
+        final ttsClient = _ImmediateFakeTtsClient();
+        final speechClient = _AppFlowSpeechClient();
+        final ttsService = TtsService(client: ttsClient);
 
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        (methodCall) async => null,
-      );
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
           SystemChannels.platform,
-          null,
-        ),
-      );
+          (methodCall) async => null,
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          ),
+        );
 
-      await tester.pumpWidget(
-        DailyBriefApp(
-          ttsService: ttsService,
-          speechToTextService: SpeechToTextService(client: speechClient),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byType(HomeScreen), findsOneWidget);
-      expect(ttsClient.spokenTexts, [AppStrings.splashGreeting]);
+        await tester.pumpWidget(
+          DailyBriefApp(
+            ttsService: ttsService,
+            speechToTextService: SpeechToTextService(client: speechClient),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(HomeScreen), findsOneWidget);
+        expect(ttsClient.spokenTexts, [AppStrings.welcomeGreeting]);
 
-      await tester.tap(find.byKey(const Key('touch_area_inkwell')));
-      await tester.pump();
-      while (speechClient.listenCallCount == 0) {
-        await Future<void>.delayed(Duration.zero);
-      }
+        await tester.tap(find.byKey(const Key('touch_area_inkwell')));
+        await tester.pump();
+        while (speechClient.listenCallCount == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
 
-      expect(ttsClient.spokenTexts, [
-        AppStrings.splashGreeting,
-        AppStrings.voiceConfirmation,
-      ]);
-      expect(speechClient.listenCallCount, 1);
-      await tester.pumpWidget(const SizedBox.shrink());
-    });
+        expect(ttsClient.spokenTexts, [
+          AppStrings.welcomeGreeting,
+          AppStrings.voiceConfirmation,
+        ]);
+        expect(speechClient.listenCallCount, 1);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
 
     testWidgets(
       '2. Indikator loading muncul ketika inisialisasi masih berlangsung',

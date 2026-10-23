@@ -5,8 +5,8 @@ class AppStrings {
   /// Nama aplikasi (TASK-12).
   static const String appName = 'DailyBrief';
 
-  /// Sapaan singkat pada Splash Screen setiap kali aplikasi dibuka.
-  static const String splashGreeting =
+  /// Sapaan singkat saat Home Screen pertama kali ditampilkan.
+  static const String welcomeGreeting =
       'Selamat datang di DailyBrief. Temukan Informasi dalam Satu Sentuhan.';
 
   /// Konfirmasi suara sebelum pengenalan ucapan dimulai.

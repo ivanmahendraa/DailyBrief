@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/constants/app_strings.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../services/speech_to_text_service.dart';
 import '../../../services/app_initializer.dart';
@@ -10,16 +9,15 @@ import '../../home/screens/home_screen.dart';
 /// Halaman Splash Screen DailyBrief.
 ///
 /// Menampilkan identitas aplikasi, logo/ikon, tagline, indikator pemuatan,
-/// menjalankan inisialisasi layanan dasar (TASK-09), lalu membacakan satu sapaan
-/// tetap melalui Text-to-Speech setiap kali aplikasi dibuka sebelum Home Screen,
-/// menunggu pemutaran selesai secara nyata tanpa penundaan tiruan (FR-01, FR-02),
-/// serta langsung melanjutkan ke Home Screen jika terjadi kegagalan TTS (TASK-10, TASK-21).
+/// menjalankan inisialisasi layanan dasar, lalu melanjutkan ke Home Screen
+/// setelah tampilan pembuka terlihat setidaknya selama waktu minimum.
 class SplashScreen extends StatefulWidget {
+  static const Duration minimumDisplayDuration = Duration(milliseconds: 1500);
+
   final AppInitializer initializer;
   final TtsService? ttsService;
   final SpeechToTextService? speechToTextService;
   final VoidCallback? onInitialized;
-  final void Function(TtsPlaybackResult result)? onGreetingCompleted;
   final bool navigateToHome;
 
   const SplashScreen({
@@ -28,7 +26,6 @@ class SplashScreen extends StatefulWidget {
     this.ttsService,
     this.speechToTextService,
     this.onInitialized,
-    this.onGreetingCompleted,
     this.navigateToHome = true,
   });
 
@@ -37,27 +34,16 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  late final TtsService _ttsService;
   bool _isInitializing = false;
   String? _errorMessage;
   bool _isNavigating = false;
+  final Stopwatch _displayStopwatch = Stopwatch();
 
   @override
   void initState() {
     super.initState();
-    _ttsService = widget.ttsService ?? TtsService();
+    _displayStopwatch.start();
     _startInitialization();
-  }
-
-  @override
-  void dispose() {
-    // Hanya hentikan TTS jika SplashScreen di-dispose secara prematur
-    // (misalnya aplikasi ditutup sebelum navigasi ke HomeScreen berlangsung).
-    // Saat navigasi normal dimulai, biarkan sapaan Splash selesai tanpa dipotong.
-    if (!_isNavigating && _ttsService.isSpeaking) {
-      _ttsService.stop();
-    }
-    super.dispose();
   }
 
   Future<void> _startInitialization() async {
@@ -78,12 +64,10 @@ class _SplashScreenState extends State<SplashScreen> {
         });
         return;
       }
-
       _notifyInitialized();
-      final playbackResult = await _playGreeting();
+      await _waitForMinimumDisplayDuration();
       if (!mounted) return;
 
-      _notifyGreetingCompleted(playbackResult);
       if (widget.navigateToHome) _navigateToHome();
     } catch (error, stackTrace) {
       debugPrint('SplashScreen initialization flow error: $error\n$stackTrace');
@@ -98,12 +82,11 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
-  Future<TtsPlaybackResult> _playGreeting() async {
-    try {
-      return await _ttsService.speak(AppStrings.splashGreeting);
-    } catch (error) {
-      debugPrint('SplashScreen TTS greeting playback error: $error');
-      return TtsPlaybackResult.failure('Gagal memutar sapaan: $error');
+  Future<void> _waitForMinimumDisplayDuration() async {
+    final remaining =
+        SplashScreen.minimumDisplayDuration - _displayStopwatch.elapsed;
+    if (remaining > Duration.zero) {
+      await Future<void>.delayed(remaining);
     }
   }
 
@@ -113,16 +96,6 @@ class _SplashScreenState extends State<SplashScreen> {
     } catch (error, stackTrace) {
       debugPrint(
         'SplashScreen onInitialized callback error: $error\n$stackTrace',
-      );
-    }
-  }
-
-  void _notifyGreetingCompleted(TtsPlaybackResult result) {
-    try {
-      widget.onGreetingCompleted?.call(result);
-    } catch (error, stackTrace) {
-      debugPrint(
-        'SplashScreen onGreetingCompleted callback error: $error\n$stackTrace',
       );
     }
   }
@@ -137,7 +110,7 @@ class _SplashScreenState extends State<SplashScreen> {
         MaterialPageRoute<void>(
           builder: (_) => HomeScreen(
             speechToTextService: widget.speechToTextService,
-            ttsService: _ttsService,
+            ttsService: widget.ttsService,
           ),
         ),
       );

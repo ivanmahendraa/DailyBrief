@@ -44,6 +44,25 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _voiceController = _createVoiceController();
     _voiceController.addListener(_handleControllerChange);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_playWelcomeGreeting());
+    });
+  }
+
+  Future<void> _playWelcomeGreeting() async {
+    try {
+      final result = await (widget.ttsService ?? TtsService()).speak(
+        AppStrings.welcomeGreeting,
+      );
+      if (result.isFailure) {
+        debugPrint('HomeScreen welcome greeting playback error: '
+            '${result.errorMessage}');
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        'HomeScreen welcome greeting playback error: $error\n$stackTrace',
+      );
+    }
   }
 
   VoiceController _createVoiceController() =>

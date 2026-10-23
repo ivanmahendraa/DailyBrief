@@ -93,8 +93,24 @@ class _ImmediateTtsService extends TtsService {
   }
 }
 
+class _HomeGreetingTtsService extends TtsService {
+  final List<String> spokenTexts = [];
+
+  @override
+  Future<TtsPlaybackResult> speak(String text) async {
+    spokenTexts.add(text);
+    return TtsPlaybackResult.success();
+  }
+}
+
 void main() {
   group('TASK-12: Home Screen DailyBrief Tests', () {
+    late _HomeGreetingTtsService greetingTtsService;
+
+    setUp(() {
+      greetingTtsService = _HomeGreetingTtsService();
+    });
+
     Widget buildTestableHomeScreen({
       VoidCallback? onTouchAreaTap,
       VoiceController? voiceController,
@@ -104,6 +120,7 @@ void main() {
         home: HomeScreen(
           onTouchAreaTap: onTouchAreaTap,
           voiceController: voiceController ?? _FakeVoiceController(),
+          ttsService: greetingTtsService,
         ),
       );
     }
@@ -233,18 +250,21 @@ void main() {
       expect(find.text(AppStrings.appName), findsOneWidget);
     });
 
-    testWidgets('8. Home tetap dapat dibangun ulang tanpa greeting otomatis', (
+    testWidgets('8. Greeting Home hanya berjalan sekali saat rebuild', (
       WidgetTester tester,
     ) async {
       final controller = _FakeVoiceController();
+      greetingTtsService.spokenTexts.clear();
       await tester.pumpWidget(
         buildTestableHomeScreen(voiceController: controller),
       );
+      await tester.pump();
       await tester.pumpWidget(
         buildTestableHomeScreen(voiceController: controller),
       );
 
       expect(find.byType(HomeScreen), findsOneWidget);
+      expect(greetingTtsService.spokenTexts, [AppStrings.welcomeGreeting]);
       expect(controller.startActionCount, 0);
       expect(tester.takeException(), isNull);
     });
@@ -322,7 +342,12 @@ void main() {
         ttsService: _ImmediateTtsService(events),
       );
       await tester.pumpWidget(
-        MaterialApp(home: HomeScreen(voiceController: controller)),
+        MaterialApp(
+          home: HomeScreen(
+            voiceController: controller,
+            ttsService: _HomeGreetingTtsService(),
+          ),
+        ),
       );
 
       await tester.tap(find.byKey(const Key('touch_area_inkwell')));
@@ -364,7 +389,12 @@ void main() {
         ttsService: _ImmediateTtsService(events),
       );
       await tester.pumpWidget(
-        MaterialApp(home: HomeScreen(voiceController: controller)),
+        MaterialApp(
+          home: HomeScreen(
+            voiceController: controller,
+            ttsService: _HomeGreetingTtsService(),
+          ),
+        ),
       );
 
       await tester.tap(find.byKey(const Key('touch_area_inkwell')));
@@ -416,6 +446,7 @@ void main() {
           home: HomeScreen(
             voiceController: controller,
             onTouchAreaTap: () => acceptedTapCount++,
+            ttsService: _HomeGreetingTtsService(),
           ),
         ),
       );

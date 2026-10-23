@@ -19,6 +19,16 @@ class LocationPermissionMessages {
   static const String error = 'Terjadi kesalahan saat memeriksa izin lokasi.';
 }
 
+/// Pesan standar terkait pengambilan koordinat lokasi pengguna.
+class LocationMessages {
+  const LocationMessages._();
+
+  static const String success = 'Lokasi berhasil didapatkan.';
+  static const String timeout =
+      'Batas waktu pengambilan lokasi habis. Silakan coba kembali.';
+  static const String failure = 'Gagal mengambil koordinat lokasi pengguna.';
+}
+
 /// Status izin lokasi aplikasi DailyBrief.
 enum LocationPermissionStatus {
   granted,
@@ -66,6 +76,129 @@ class LocationPermissionResult {
       'LocationPermissionResult(status: $status, message: $message, rawPermission: $rawPermission)';
 }
 
+/// Representasi koordinat lokasi pengguna.
+@immutable
+class UserLocation {
+  final double latitude;
+  final double longitude;
+  final double? accuracy;
+  final double? altitude;
+  final DateTime? timestamp;
+
+  const UserLocation({
+    required this.latitude,
+    required this.longitude,
+    this.accuracy,
+    this.altitude,
+    this.timestamp,
+  });
+
+  factory UserLocation.fromPosition(Position position) => UserLocation(
+    latitude: position.latitude,
+    longitude: position.longitude,
+    accuracy: position.accuracy,
+    altitude: position.altitude,
+    timestamp: position.timestamp,
+  );
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is UserLocation &&
+        other.latitude == latitude &&
+        other.longitude == longitude;
+  }
+
+  @override
+  int get hashCode => Object.hash(latitude, longitude);
+
+  @override
+  String toString() =>
+      'UserLocation(latitude: $latitude, longitude: $longitude)';
+}
+
+/// Status hasil dari pengambilan posisi lokasi pengguna.
+enum LocationResultStatus {
+  success,
+  permissionDenied,
+  permissionDeniedForever,
+  serviceDisabled,
+  timeout,
+  failure,
+}
+
+/// Representasi hasil pengambilan koordinat posisi pengguna.
+@immutable
+class LocationResult {
+  final LocationResultStatus status;
+  final UserLocation? location;
+  final Position? rawPosition;
+  final String message;
+
+  const LocationResult({
+    required this.status,
+    this.location,
+    this.rawPosition,
+    required this.message,
+  });
+
+  factory LocationResult.success(Position position) => LocationResult(
+    status: LocationResultStatus.success,
+    location: UserLocation.fromPosition(position),
+    rawPosition: position,
+    message: LocationMessages.success,
+  );
+
+  factory LocationResult.permissionDenied() => const LocationResult(
+    status: LocationResultStatus.permissionDenied,
+    message: LocationPermissionMessages.denied,
+  );
+
+  factory LocationResult.permissionDeniedForever() => const LocationResult(
+    status: LocationResultStatus.permissionDeniedForever,
+    message: LocationPermissionMessages.deniedForever,
+  );
+
+  factory LocationResult.serviceDisabled() => const LocationResult(
+    status: LocationResultStatus.serviceDisabled,
+    message: LocationPermissionMessages.serviceDisabled,
+  );
+
+  factory LocationResult.timeout() => const LocationResult(
+    status: LocationResultStatus.timeout,
+    message: LocationMessages.timeout,
+  );
+
+  factory LocationResult.failure(String message) =>
+      LocationResult(status: LocationResultStatus.failure, message: message);
+
+  bool get isSuccess => status == LocationResultStatus.success;
+  bool get isFailure => !isSuccess;
+  bool get isPermissionDenied =>
+      status == LocationResultStatus.permissionDenied;
+  bool get isPermissionDeniedForever =>
+      status == LocationResultStatus.permissionDeniedForever;
+  bool get isServiceDisabled =>
+      status == LocationResultStatus.serviceDisabled;
+  bool get isTimeout => status == LocationResultStatus.timeout;
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is LocationResult &&
+        other.status == status &&
+        other.location == location &&
+        other.message == message;
+  }
+
+  @override
+  int get hashCode => Object.hash(status, location, message);
+
+  @override
+  String toString() =>
+      'LocationResult(status: $status, location: $location, message: $message)';
+}
+
 /// Kontrak abstraksi untuk wrapper platform geolocator,
 /// memungkinkan pengujian modular tanpa memanggil native channel.
 abstract interface class LocationClient {
@@ -74,6 +207,7 @@ abstract interface class LocationClient {
   Future<LocationPermission> requestPermission();
   Future<bool> openAppSettings();
   Future<bool> openLocationSettings();
+  Future<Position> getCurrentPosition({LocationSettings? locationSettings});
 }
 
 /// Implementasi default [LocationClient] yang menggunakan API statis dari `geolocator`.
@@ -96,11 +230,15 @@ class DefaultLocationClient implements LocationClient {
 
   @override
   Future<bool> openLocationSettings() => Geolocator.openLocationSettings();
+
+  @override
+  Future<Position> getCurrentPosition({LocationSettings? locationSettings}) =>
+      Geolocator.getCurrentPosition(locationSettings: locationSettings);
 }
 
 /// Service untuk menangani pengecekan izin lokasi dan pengambilan koordinat posisi pengguna.
 ///
-/// Memenuhi kebutuhan TASK-45 dan FR-09 pada PRD.md.
+/// Memenuhi kebutuhan TASK-45, TASK-46, dan FR-09 pada PRD.md.
 class LocationService {
   final LocationClient _client;
 
@@ -230,6 +368,62 @@ class LocationService {
         status: LocationPermissionStatus.error,
         message: LocationPermissionMessages.error,
       );
+    }
+  }
+
+  /// Mengambil posisi koordinat saat ini dari perangkat pengguna.
+  ///
+  /// Menjalankan alur:
+  /// 1. Memeriksa dan meminta izin lokasi melalui [requestLocationPermission].
+  /// 2. Jika izin ditolak, ditolak permanen, atau layanan GPS mati, mengembalikan [LocationResult] yang sesuai.
+  /// 3. Jika izin diberikan dan GPS aktif, memanggil platform untuk mengambil [Position] dengan batasan [timeout].
+  /// 4. Menangani kondisi timeout dan exception lainnya dari platform geolocator.
+  Future<LocationResult> getCurrentPosition({
+    Duration timeout = const Duration(seconds: 10),
+    LocationSettings? locationSettings,
+  }) async {
+    try {
+      final permissionResult = await requestLocationPermission(
+        checkServiceEnabled: true,
+      );
+
+      if (permissionResult.isServiceDisabled) {
+        return LocationResult.serviceDisabled();
+      }
+
+      if (permissionResult.isDeniedForever) {
+        return LocationResult.permissionDeniedForever();
+      }
+
+      if (permissionResult.isDenied) {
+        return LocationResult.permissionDenied();
+      }
+
+      if (!permissionResult.isGranted) {
+        return LocationResult.failure(permissionResult.message);
+      }
+
+      final position = await _client
+          .getCurrentPosition(locationSettings: locationSettings)
+          .timeout(timeout);
+
+      return LocationResult.success(position);
+    } on TimeoutException catch (e, stackTrace) {
+      debugPrint('LocationService.getCurrentPosition timeout: $e\n$stackTrace');
+      return LocationResult.timeout();
+    } on LocationServiceDisabledException catch (e, stackTrace) {
+      debugPrint(
+        'LocationService.getCurrentPosition service disabled: $e\n$stackTrace',
+      );
+      return LocationResult.serviceDisabled();
+    } on PermissionDeniedException catch (e, stackTrace) {
+      debugPrint(
+        'LocationService.getCurrentPosition permission denied: $e\n$stackTrace',
+      );
+      return LocationResult.permissionDenied();
+    } catch (e, stackTrace) {
+      debugPrint('LocationService.getCurrentPosition error: $e\n$stackTrace');
+      return LocationResult.failure('${LocationMessages.failure}: $e');
     }
   }
 

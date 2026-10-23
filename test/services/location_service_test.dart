@@ -2,24 +2,51 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:daily_brief/services/location_service.dart';
 
+Position _createSamplePosition({
+  double latitude = 1.1301,
+  double longitude = 104.0529,
+  double accuracy = 5.0,
+  double altitude = 12.0,
+  DateTime? timestamp,
+}) {
+  return Position(
+    latitude: latitude,
+    longitude: longitude,
+    timestamp: timestamp ?? DateTime(2026, 10, 23, 20, 0),
+    accuracy: accuracy,
+    altitude: altitude,
+    altitudeAccuracy: 1.0,
+    heading: 0.0,
+    headingAccuracy: 1.0,
+    speed: 0.0,
+    speedAccuracy: 0.0,
+  );
+}
+
 class _FakeLocationClient implements LocationClient {
   bool serviceEnabled = true;
   LocationPermission currentPermission = LocationPermission.denied;
   LocationPermission requestResult = LocationPermission.whileInUse;
   bool openAppSettingsResult = true;
   bool openLocationSettingsResult = true;
+  Position mockPosition = _createSamplePosition();
+  Duration? getCurrentPositionDelay;
 
   bool throwOnServiceCheck = false;
   bool throwOnCheckPermission = false;
   bool throwOnRequestPermission = false;
   bool throwOnOpenAppSettings = false;
   bool throwOnOpenLocationSettings = false;
+  bool throwOnGetCurrentPosition = false;
+  Object? customExceptionOnGetCurrentPosition;
 
   int serviceCheckCallCount = 0;
   int checkPermissionCallCount = 0;
   int requestPermissionCallCount = 0;
   int openAppSettingsCallCount = 0;
   int openLocationSettingsCallCount = 0;
+  int getCurrentPositionCallCount = 0;
+  LocationSettings? lastLocationSettings;
 
   @override
   Future<bool> isLocationServiceEnabled() async {
@@ -64,6 +91,27 @@ class _FakeLocationClient implements LocationClient {
       throw StateError('Open location settings failed');
     }
     return openLocationSettingsResult;
+  }
+
+  @override
+  Future<Position> getCurrentPosition({
+    LocationSettings? locationSettings,
+  }) async {
+    getCurrentPositionCallCount++;
+    lastLocationSettings = locationSettings;
+
+    if (getCurrentPositionDelay != null) {
+      await Future<void>.delayed(getCurrentPositionDelay!);
+    }
+
+    if (throwOnGetCurrentPosition) {
+      if (customExceptionOnGetCurrentPosition != null) {
+        throw customExceptionOnGetCurrentPosition!;
+      }
+      throw StateError('Position retrieval failed');
+    }
+
+    return mockPosition;
   }
 }
 
@@ -450,6 +498,204 @@ void main() {
         expect(resultA.hashCode, equals(resultB.hashCode));
         expect(resultA == resultC, isFalse);
         expect(resultA.toString(), contains('LocationPermissionStatus.granted'));
+      });
+    });
+  });
+
+  group('LocationService Position Tests (TASK-46)', () {
+    late _FakeLocationClient fakeClient;
+    late LocationService locationService;
+
+    setUp(() {
+      fakeClient = _FakeLocationClient();
+      locationService = LocationService(fakeClient);
+    });
+
+    test(
+      'berhasil mendapatkan latitude dan longitude saat izin sudah diberikan',
+      () async {
+        fakeClient.serviceEnabled = true;
+        fakeClient.currentPermission = LocationPermission.whileInUse;
+        fakeClient.mockPosition = _createSamplePosition(
+          latitude: -6.2088,
+          longitude: 106.8456,
+        );
+
+        final result = await locationService.getCurrentPosition();
+
+        expect(result.isSuccess, isTrue);
+        expect(result.status, LocationResultStatus.success);
+        expect(result.location, isNotNull);
+        expect(result.location!.latitude, -6.2088);
+        expect(result.location!.longitude, 106.8456);
+        expect(result.rawPosition, isNotNull);
+        expect(result.rawPosition!.latitude, -6.2088);
+        expect(result.rawPosition!.longitude, 106.8456);
+        expect(result.message, LocationMessages.success);
+        expect(fakeClient.getCurrentPositionCallCount, 1);
+      },
+    );
+
+    test('berhasil mendapatkan posisi setelah meminta izin yang disetujui', () async {
+      fakeClient.serviceEnabled = true;
+      fakeClient.currentPermission = LocationPermission.denied;
+      fakeClient.requestResult = LocationPermission.whileInUse;
+      fakeClient.mockPosition = _createSamplePosition(
+        latitude: 1.1301,
+        longitude: 104.0529,
+      );
+
+      final result = await locationService.getCurrentPosition();
+
+      expect(result.isSuccess, isTrue);
+      expect(result.location!.latitude, 1.1301);
+      expect(result.location!.longitude, 104.0529);
+      expect(fakeClient.checkPermissionCallCount, 1);
+      expect(fakeClient.requestPermissionCallCount, 1);
+      expect(fakeClient.getCurrentPositionCallCount, 1);
+    });
+
+    test('mengembalikan serviceDisabled saat layanan lokasi/GPS mati', () async {
+      fakeClient.serviceEnabled = false;
+
+      final result = await locationService.getCurrentPosition();
+
+      expect(result.isSuccess, isFalse);
+      expect(result.isServiceDisabled, isTrue);
+      expect(result.status, LocationResultStatus.serviceDisabled);
+      expect(result.message, LocationPermissionMessages.serviceDisabled);
+      expect(result.location, isNull);
+      expect(fakeClient.getCurrentPositionCallCount, 0);
+    });
+
+    test('mengembalikan permissionDenied saat izin ditolak oleh pengguna', () async {
+      fakeClient.serviceEnabled = true;
+      fakeClient.currentPermission = LocationPermission.denied;
+      fakeClient.requestResult = LocationPermission.denied;
+
+      final result = await locationService.getCurrentPosition();
+
+      expect(result.isSuccess, isFalse);
+      expect(result.isPermissionDenied, isTrue);
+      expect(result.status, LocationResultStatus.permissionDenied);
+      expect(result.message, LocationPermissionMessages.denied);
+      expect(result.location, isNull);
+      expect(fakeClient.getCurrentPositionCallCount, 0);
+    });
+
+    test('mengembalikan permissionDeniedForever saat izin ditolak permanen', () async {
+      fakeClient.serviceEnabled = true;
+      fakeClient.currentPermission = LocationPermission.deniedForever;
+
+      final result = await locationService.getCurrentPosition();
+
+      expect(result.isSuccess, isFalse);
+      expect(result.isPermissionDeniedForever, isTrue);
+      expect(result.status, LocationResultStatus.permissionDeniedForever);
+      expect(result.message, LocationPermissionMessages.deniedForever);
+      expect(result.location, isNull);
+      expect(fakeClient.requestPermissionCallCount, 0);
+      expect(fakeClient.getCurrentPositionCallCount, 0);
+    });
+
+    test('mengembalikan timeout saat pengambilan posisi melebihi batas waktu', () async {
+      fakeClient.serviceEnabled = true;
+      fakeClient.currentPermission = LocationPermission.whileInUse;
+      fakeClient.getCurrentPositionDelay = const Duration(milliseconds: 150);
+
+      final result = await locationService.getCurrentPosition(
+        timeout: const Duration(milliseconds: 50),
+      );
+
+      expect(result.isSuccess, isFalse);
+      expect(result.isTimeout, isTrue);
+      expect(result.status, LocationResultStatus.timeout);
+      expect(result.message, LocationMessages.timeout);
+      expect(result.location, isNull);
+    });
+
+    test('menangani LocationServiceDisabledException dari client', () async {
+      fakeClient.serviceEnabled = true;
+      fakeClient.currentPermission = LocationPermission.whileInUse;
+      fakeClient.throwOnGetCurrentPosition = true;
+      fakeClient.customExceptionOnGetCurrentPosition =
+          const LocationServiceDisabledException();
+
+      final result = await locationService.getCurrentPosition();
+
+      expect(result.isSuccess, isFalse);
+      expect(result.isServiceDisabled, isTrue);
+      expect(result.status, LocationResultStatus.serviceDisabled);
+      expect(result.message, LocationPermissionMessages.serviceDisabled);
+    });
+
+    test('menangani PermissionDeniedException dari client', () async {
+      fakeClient.serviceEnabled = true;
+      fakeClient.currentPermission = LocationPermission.whileInUse;
+      fakeClient.throwOnGetCurrentPosition = true;
+      fakeClient.customExceptionOnGetCurrentPosition =
+          const PermissionDeniedException('Access denied by system');
+
+      final result = await locationService.getCurrentPosition();
+
+      expect(result.isSuccess, isFalse);
+      expect(result.isPermissionDenied, isTrue);
+      expect(result.status, LocationResultStatus.permissionDenied);
+      expect(result.message, LocationPermissionMessages.denied);
+    });
+
+    test('menangani error umum/exception dari client geolocator', () async {
+      fakeClient.serviceEnabled = true;
+      fakeClient.currentPermission = LocationPermission.whileInUse;
+      fakeClient.throwOnGetCurrentPosition = true;
+      fakeClient.customExceptionOnGetCurrentPosition =
+          StateError('Native geolocator failed');
+
+      final result = await locationService.getCurrentPosition();
+
+      expect(result.isSuccess, isFalse);
+      expect(result.isFailure, isTrue);
+      expect(result.status, LocationResultStatus.failure);
+      expect(result.message, contains(LocationMessages.failure));
+      expect(result.message, contains('Native geolocator failed'));
+    });
+
+    group('UserLocation & LocationResult models', () {
+      test('UserLocation fromPosition maps fields properly and supports equality', () {
+        final pos = _createSamplePosition(
+          latitude: -7.2575,
+          longitude: 112.7521,
+        );
+        final userLocA = UserLocation.fromPosition(pos);
+        final userLocB = UserLocation(
+          latitude: -7.2575,
+          longitude: 112.7521,
+        );
+        final userLocC = UserLocation(
+          latitude: 1.0,
+          longitude: 100.0,
+        );
+
+        expect(userLocA.latitude, -7.2575);
+        expect(userLocA.longitude, 112.7521);
+        expect(userLocA, equals(userLocB));
+        expect(userLocA.hashCode, equals(userLocB.hashCode));
+        expect(userLocA == userLocC, isFalse);
+        expect(userLocA.toString(), contains('UserLocation'));
+      });
+
+      test('LocationResult equality and getters work properly', () {
+        final pos = _createSamplePosition();
+        final successA = LocationResult.success(pos);
+        final successB = LocationResult.success(pos);
+        final timeout = LocationResult.timeout();
+
+        expect(successA, equals(successB));
+        expect(successA.hashCode, equals(successB.hashCode));
+        expect(successA == timeout, isFalse);
+        expect(successA.isSuccess, isTrue);
+        expect(timeout.isTimeout, isTrue);
+        expect(timeout.toString(), contains('LocationResultStatus.timeout'));
       });
     });
   });

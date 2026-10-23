@@ -3,9 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../core/constants/app_strings.dart';
-import 'command_parser.dart';
+import '../../services/date_time_service.dart';
 import '../../services/speech_to_text_service.dart';
 import '../../services/tts_service.dart';
+import 'command_parser.dart';
 
 enum VoiceInteractionState {
   idle,
@@ -33,6 +34,7 @@ class VoiceController extends ChangeNotifier {
       'Maaf, respons suara tidak dapat diputar. Coba lagi.';
 
   final SpeechToTextService _speechToTextService;
+  final DateTimeService _dateTimeService;
   final TtsService _ttsService;
   final CommandParser _commandParser = const CommandParser();
 
@@ -48,9 +50,11 @@ class VoiceController extends ChangeNotifier {
   TtsPlaybackStatus? _lastPlaybackStatus;
 
   VoiceController({
+    DateTimeService? dateTimeService,
     SpeechToTextService? speechToTextService,
     TtsService? ttsService,
-  }) : _speechToTextService = speechToTextService ?? SpeechToTextService(),
+  }) : _dateTimeService = dateTimeService ?? DateTimeService(),
+       _speechToTextService = speechToTextService ?? SpeechToTextService(),
        _ttsService = ttsService ?? TtsService();
 
   VoiceInteractionState get state => _state;
@@ -212,13 +216,22 @@ class VoiceController extends ChangeNotifier {
     if (status != SpeechEngineStatus.done) return;
 
     _sessionActive = false;
-    if (!_finalResultHandled ||
-        _commandParser.parse(_recognizedText) == VoiceCommand.unknown) {
-      unawaited(_speakUnsupportedCommand(sessionId));
-      return;
+    final command = _finalResultHandled
+        ? _commandParser.parse(_recognizedText)
+        : VoiceCommand.unknown;
+    switch (command) {
+      case VoiceCommand.day:
+        unawaited(_speakResponse(sessionId, _dateTimeService.currentDayResponse));
+      case VoiceCommand.date:
+        unawaited(_speakResponse(sessionId, _dateTimeService.currentDateResponse));
+      case VoiceCommand.time:
+        unawaited(_speakResponse(sessionId, _dateTimeService.currentTimeResponse));
+      case VoiceCommand.unknown:
+        unawaited(_speakResponse(sessionId, unsupportedCommandResponse));
+      case VoiceCommand.weather:
+      case VoiceCommand.location:
+        _finishSession();
     }
-
-    _finishSession();
   }
 
   void _handleResult(int sessionId, SpeechRecognitionResult result) {
@@ -255,7 +268,7 @@ class VoiceController extends ChangeNotifier {
     return sessionFailureMessage;
   }
 
-  Future<void> _speakUnsupportedCommand(int sessionId) async {
+  Future<void> _speakResponse(int sessionId, String response) async {
     if (!_isCurrentSession(sessionId) || _disposed) return;
 
     try {
@@ -266,9 +279,7 @@ class VoiceController extends ChangeNotifier {
       if (!_isCurrentSession(sessionId) || _disposed) return;
 
       _setState(VoiceInteractionState.speaking);
-      final playbackResult = await _ttsService.speak(
-        unsupportedCommandResponse,
-      );
+      final playbackResult = await _ttsService.speak(response);
       if (!_isCurrentSession(sessionId) || _disposed) return;
 
       _lastPlaybackStatus = playbackResult.status;

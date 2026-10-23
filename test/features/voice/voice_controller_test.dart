@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:daily_brief/core/constants/app_strings.dart';
 import 'package:daily_brief/features/voice/voice_controller.dart';
+import 'package:daily_brief/services/date_time_service.dart';
 import 'package:daily_brief/services/speech_to_text_service.dart';
 import 'package:daily_brief/services/tts_service.dart';
 
@@ -140,12 +141,18 @@ class _FakeTtsService extends TtsService {
 }
 
 class _Harness {
+  _Harness({DateTimeService? dateTimeService})
+    : dateTimeService =
+          dateTimeService ?? DateTimeService(now: () => DateTime(2026, 10, 16));
+
   final _FakeSpeechToTextClient speechClient = _FakeSpeechToTextClient();
   final _FakeTtsService ttsService = _FakeTtsService();
+  final DateTimeService dateTimeService;
   late final SpeechToTextService speechService = SpeechToTextService(
     client: speechClient,
   );
   late final VoiceController controller = VoiceController(
+    dateTimeService: dateTimeService,
     speechToTextService: speechService,
     ttsService: ttsService,
   );
@@ -328,12 +335,51 @@ void main() {
       },
     );
 
-    test('recognized command is not reported as unsupported', () async {
-      final harness = _Harness();
+    test('day command speaks the current day in Indonesian', () async {
+      final harness = _Harness(
+        dateTimeService: DateTimeService(now: () => DateTime(2026, 10, 16)),
+      );
       await harness.startAndConfirmListening();
       await harness.emitFinalAndComplete('hari ini');
 
-      expect(harness.ttsService.responseCallCount, 0);
+      expect(harness.ttsService.responseCallCount, 1);
+      expect(harness.ttsService.spokenText, 'Hari ini hari Jumat.');
+      expect(harness.controller.state, VoiceInteractionState.idle);
+      expect(harness.controller.hasActiveSession, isFalse);
+      harness.controller.dispose();
+    });
+
+    test('date command speaks the current date in Indonesian', () async {
+      final harness = _Harness(
+        dateTimeService: DateTimeService(now: () => DateTime(2026, 10, 16)),
+      );
+      await harness.startAndConfirmListening();
+      await harness.emitFinalAndComplete('tanggal berapa');
+
+      expect(harness.ttsService.responseCallCount, 1);
+      expect(
+        harness.ttsService.spokenText,
+        'Hari ini tanggal 16 Oktober 2026.',
+      );
+      expect(harness.controller.state, VoiceInteractionState.idle);
+      expect(harness.controller.hasActiveSession, isFalse);
+      harness.controller.dispose();
+    });
+
+    test('time command speaks the current local time in Indonesian', () async {
+      final harness = _Harness(
+        dateTimeService: DateTimeService(
+          now: () => DateTime(2026, 10, 16, 13, 5),
+        ),
+      );
+      await harness.startAndConfirmListening();
+      await harness.emitFinalAndComplete('jam berapa');
+
+      expect(harness.ttsService.responseCallCount, 1);
+      expect(
+        harness.ttsService.spokenText,
+        'Sekarang pukul 1 siang lewat 5 menit.',
+      );
       expect(harness.controller.state, VoiceInteractionState.idle);
       expect(harness.controller.hasActiveSession, isFalse);
       harness.controller.dispose();
@@ -502,10 +548,7 @@ void main() {
         expect(initializeFailure.ttsService.initializeCallCount, 1);
         expect(initializeFailure.ttsService.speakCallCount, 0);
         expect(initializeFailure.speechClient.listenCallCount, 0);
-        expect(
-          initializeFailure.controller.state,
-          VoiceInteractionState.idle,
-        );
+        expect(initializeFailure.controller.state, VoiceInteractionState.idle);
         expect(
           initializeFailure.controller.errorMessage,
           VoiceController.confirmationFailureMessage,

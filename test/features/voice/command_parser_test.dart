@@ -37,20 +37,61 @@ void main() {
       expect(parser.parse('Di mana lokasi saya?'), VoiceCommand.location);
     });
 
-    test('recognizes supported natural-language variations', () {
-      expect(parser.parse('Sekarang hari apa'), VoiceCommand.day);
-      expect(parser.parse('Tanggal hari ini berapa'), VoiceCommand.date);
-      expect(
-        parser.parse('Tolong beri tahu waktu sekarang'),
-        VoiceCommand.time,
-      );
-      expect(
-        parser.parse('Bagaimana prakiraan cuaca hari ini'),
-        VoiceCommand.weather,
-      );
-      expect(parser.parse('Saya berada di mana'), VoiceCommand.location);
-      expect(parser.parse('Saya di mana sekarang'), VoiceCommand.location);
-      expect(parser.parse('Tolong cek cuaca'), VoiceCommand.weather);
+    test('recognizes every supported Indonesian utterance variation', () {
+      const utterancesByCommand = {
+        VoiceCommand.day: [
+          'hari',
+          'hari ini',
+          'hari apa',
+          'sekarang hari apa',
+        ],
+        VoiceCommand.date: [
+          'tanggal',
+          'tanggal berapa',
+          'tanggal hari ini',
+          'tanggal hari ini berapa',
+        ],
+        VoiceCommand.time: [
+          'jam',
+          'jam berapa',
+          'waktu',
+          'waktu sekarang',
+          'pukul',
+          'pukul berapa',
+          'tolong beri tahu waktu sekarang',
+        ],
+        VoiceCommand.weather: [
+          'cuaca',
+          'ramalan cuaca',
+          'prakiraan cuaca',
+          'bagaimana cuaca hari ini',
+          'bagaimana prakiraan cuaca hari ini',
+          'tolong cek cuaca',
+        ],
+        VoiceCommand.location: [
+          'lokasi',
+          'lokasi saya',
+          'posisi saya',
+          'saya di mana',
+          'saya dimana',
+          'saya berada di mana',
+          'saya berada dimana',
+          'di mana saya',
+          'dimana saya',
+          'di mana lokasi saya',
+          'saya di mana sekarang',
+        ],
+      };
+
+      for (final entry in utterancesByCommand.entries) {
+        for (final utterance in entry.value) {
+          expect(
+            parser.parse(utterance),
+            entry.key,
+            reason: 'Expected "$utterance" to map to ${entry.key}.',
+          );
+        }
+      }
     });
 
     test('returns unknown for empty and unrecognized input', () {

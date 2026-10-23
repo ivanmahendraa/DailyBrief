@@ -70,5 +70,7 @@
 	<string>DailyBrief menggunakan mikrofon untuk menerima perintah suara.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>DailyBrief menggunakan pengenalan suara untuk memahami ucapan Anda.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>DailyBrief membutuhkan izin lokasi untuk memberikan informasi cuaca dan lokasi terkini.</string>
 </dict>
 </plist>

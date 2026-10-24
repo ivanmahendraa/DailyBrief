@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "683623095168",
+    "project_id": "dailybrief-ivanmahendraa",
+    "storage_bucket": "dailybrief-ivanmahendraa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:683623095168:android:a9962014e4dceabc183f65",
+        "android_client_info": {
+          "package_name": "com.example.daily_brief"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAnwIeNuF6SX7RcQni0iNf7mG3GYogjAUI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

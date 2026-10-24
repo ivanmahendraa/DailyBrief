@@ -2,6 +2,33 @@
 
 A new Flutter project.
 
+## Firebase and crash reporting
+
+The Android, iOS, and Web app configurations are generated in
+`lib/firebase_options.dart` for the Firebase project `dailybrief-ivanmahendraa`.
+Regenerate them with:
+
+```powershell
+dart pub global run flutterfire_cli:flutterfire configure --project=dailybrief-ivanmahendraa --platforms=android,ios,web
+```
+
+Cloud Firestore stores only recognized command categories and server timestamps.
+It does not store speech transcripts, audio, responses, or location coordinates.
+The Firestore access rules are in `firestore.rules`.
+
+Firebase Analytics is not integrated, and the app does not send product
+analytics events. If analytics is considered in the future, its purpose,
+collected fields, and user privacy impact must be reviewed before enabling it;
+speech transcripts, audio, precise location, and response text must not be
+logged as analytics data.
+
+Crashlytics is configured for Android and iOS. Automatic crash collection is
+enabled in release builds and disabled in debug builds. Global Flutter and
+uncaught asynchronous errors are reported with generic exception messages and
+their stack traces; user utterances, location data, and error text are not added
+to crash reports. Review reports in the Firebase Console under
+**DevOps & Engagement > Crashlytics**.
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.

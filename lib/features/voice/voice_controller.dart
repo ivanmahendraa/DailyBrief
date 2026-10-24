@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../core/constants/app_strings.dart';
+import '../../services/command_history_service.dart';
 import '../../services/date_time_service.dart';
 import '../../services/geocoding_service.dart';
 import '../../services/location_service.dart';
@@ -43,6 +44,7 @@ class VoiceController extends ChangeNotifier {
   final LocationService _locationService;
   final GeocodingService _geocodingService;
   final WeatherService _weatherService;
+  final CommandHistoryWriter _commandHistoryWriter;
   final WeatherResponseGenerator _weatherResponseGenerator;
   final CommandParser _commandParser = const CommandParser();
 
@@ -64,6 +66,7 @@ class VoiceController extends ChangeNotifier {
     LocationService? locationService,
     GeocodingService? geocodingService,
     WeatherService? weatherService,
+    CommandHistoryWriter? commandHistoryWriter,
     WeatherResponseGenerator? weatherResponseGenerator,
   }) : _dateTimeService = dateTimeService ?? DateTimeService(),
        _speechToTextService = speechToTextService ?? SpeechToTextService(),
@@ -71,6 +74,8 @@ class VoiceController extends ChangeNotifier {
        _locationService = locationService ?? LocationService(),
        _geocodingService = geocodingService ?? GeocodingService(),
        _weatherService = weatherService ?? WeatherService(),
+       _commandHistoryWriter =
+           commandHistoryWriter ?? FirestoreCommandHistoryService(),
        _weatherResponseGenerator =
            weatherResponseGenerator ?? const WeatherResponseGenerator();
 
@@ -238,19 +243,36 @@ class VoiceController extends ChangeNotifier {
     final command = _finalResultHandled
         ? _commandParser.parse(_recognizedText)
         : VoiceCommand.unknown;
+    if (command != VoiceCommand.unknown) {
+      unawaited(_recordCommandHistory(command));
+    }
     switch (command) {
       case VoiceCommand.day:
-        unawaited(_speakResponse(sessionId, _dateTimeService.currentDayResponse));
+        unawaited(
+          _speakResponse(sessionId, _dateTimeService.currentDayResponse),
+        );
       case VoiceCommand.date:
-        unawaited(_speakResponse(sessionId, _dateTimeService.currentDateResponse));
+        unawaited(
+          _speakResponse(sessionId, _dateTimeService.currentDateResponse),
+        );
       case VoiceCommand.time:
-        unawaited(_speakResponse(sessionId, _dateTimeService.currentTimeResponse));
+        unawaited(
+          _speakResponse(sessionId, _dateTimeService.currentTimeResponse),
+        );
       case VoiceCommand.location:
         unawaited(_handleLocationCommand(sessionId));
       case VoiceCommand.unknown:
         unawaited(_speakResponse(sessionId, unsupportedCommandResponse));
       case VoiceCommand.weather:
         unawaited(_handleWeatherCommand(sessionId));
+    }
+  }
+
+  Future<void> _recordCommandHistory(VoiceCommand command) async {
+    try {
+      await _commandHistoryWriter.record(command);
+    } catch (error, stackTrace) {
+      debugPrint('VoiceController command history error: $error\n$stackTrace');
     }
   }
 
@@ -324,8 +346,8 @@ class VoiceController extends ChangeNotifier {
         return;
       }
 
-      final responseText = address.placeName != null &&
-              address.placeName!.trim().isNotEmpty
+      final responseText =
+          address.placeName != null && address.placeName!.trim().isNotEmpty
           ? 'Lokasi Anda berada di sekitar $locationName.'
           : 'Lokasi Anda berada di $locationName.';
 
@@ -367,8 +389,9 @@ class VoiceController extends ChangeNotifier {
         return;
       }
 
-      final responseText =
-          _weatherResponseGenerator.generate(weatherResult.data!);
+      final responseText = _weatherResponseGenerator.generate(
+        weatherResult.data!,
+      );
       await _speakResponse(sessionId, responseText);
     } catch (error, stackTrace) {
       debugPrint('VoiceController weather error: $error\n$stackTrace');

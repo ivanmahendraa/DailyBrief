@@ -4,11 +4,13 @@ import 'package:flutter/foundation.dart'
         defaultTargetPlatform,
         debugPrint,
         kIsWeb,
+        kReleaseMode,
         TargetPlatform;
 import 'package:flutter/material.dart';
 
 import 'app.dart';
 import 'firebase_options.dart';
+import 'services/crash_reporting_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,6 +23,13 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    final crashReportingSupported =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    if (crashReportingSupported) {
+      await CrashReportingService(reporter: FirebaseCrashErrorReporter())
+          .initialize(collectionEnabled: kReleaseMode);
+    }
   } else {
     debugPrint('Firebase is not configured for this platform.');
   }

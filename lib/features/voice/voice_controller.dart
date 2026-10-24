@@ -8,7 +8,9 @@ import '../../services/geocoding_service.dart';
 import '../../services/location_service.dart';
 import '../../services/speech_to_text_service.dart';
 import '../../services/tts_service.dart';
+import '../../services/weather_service.dart';
 import 'command_parser.dart';
+import 'weather_response_generator.dart';
 
 enum VoiceInteractionState {
   idle,
@@ -40,6 +42,8 @@ class VoiceController extends ChangeNotifier {
   final TtsService _ttsService;
   final LocationService _locationService;
   final GeocodingService _geocodingService;
+  final WeatherService _weatherService;
+  final WeatherResponseGenerator _weatherResponseGenerator;
   final CommandParser _commandParser = const CommandParser();
 
   VoiceInteractionState _state = VoiceInteractionState.idle;
@@ -59,11 +63,16 @@ class VoiceController extends ChangeNotifier {
     TtsService? ttsService,
     LocationService? locationService,
     GeocodingService? geocodingService,
+    WeatherService? weatherService,
+    WeatherResponseGenerator? weatherResponseGenerator,
   }) : _dateTimeService = dateTimeService ?? DateTimeService(),
        _speechToTextService = speechToTextService ?? SpeechToTextService(),
        _ttsService = ttsService ?? TtsService(),
        _locationService = locationService ?? LocationService(),
-       _geocodingService = geocodingService ?? GeocodingService();
+       _geocodingService = geocodingService ?? GeocodingService(),
+       _weatherService = weatherService ?? WeatherService(),
+       _weatherResponseGenerator =
+           weatherResponseGenerator ?? const WeatherResponseGenerator();
 
   VoiceInteractionState get state => _state;
 
@@ -241,7 +250,7 @@ class VoiceController extends ChangeNotifier {
       case VoiceCommand.unknown:
         unawaited(_speakResponse(sessionId, unsupportedCommandResponse));
       case VoiceCommand.weather:
-        _finishSession();
+        unawaited(_handleWeatherCommand(sessionId));
     }
   }
 
@@ -327,6 +336,46 @@ class VoiceController extends ChangeNotifier {
         await _speakResponse(
           sessionId,
           'Terjadi kesalahan saat memproses informasi lokasi.',
+        );
+      }
+    }
+  }
+
+  Future<void> _handleWeatherCommand(int sessionId) async {
+    if (!_isCurrentSession(sessionId) || _disposed) return;
+
+    _setState(VoiceInteractionState.processing);
+
+    try {
+      final locationResult = await _locationService.getCurrentPosition();
+      if (!_isCurrentSession(sessionId) || _disposed) return;
+
+      if (!locationResult.isSuccess || locationResult.location == null) {
+        await _speakResponse(sessionId, locationResult.message);
+        return;
+      }
+
+      final coords = locationResult.location!;
+      final weatherResult = await _weatherService.getCurrentWeather(
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      );
+      if (!_isCurrentSession(sessionId) || _disposed) return;
+
+      if (!weatherResult.isSuccess || weatherResult.data == null) {
+        await _speakResponse(sessionId, weatherResult.message);
+        return;
+      }
+
+      final responseText =
+          _weatherResponseGenerator.generate(weatherResult.data!);
+      await _speakResponse(sessionId, responseText);
+    } catch (error, stackTrace) {
+      debugPrint('VoiceController weather error: $error\n$stackTrace');
+      if (_isCurrentSession(sessionId) && !_disposed) {
+        await _speakResponse(
+          sessionId,
+          'Terjadi kesalahan saat memproses informasi cuaca.',
         );
       }
     }

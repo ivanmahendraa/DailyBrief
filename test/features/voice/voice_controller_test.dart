@@ -7,8 +7,10 @@ import 'package:daily_brief/features/voice/voice_controller.dart';
 import 'package:daily_brief/services/date_time_service.dart';
 import 'package:daily_brief/services/geocoding_service.dart';
 import 'package:daily_brief/services/location_service.dart';
+import 'package:daily_brief/features/voice/weather_response_generator.dart';
 import 'package:daily_brief/services/speech_to_text_service.dart';
 import 'package:daily_brief/services/tts_service.dart';
+import 'package:daily_brief/services/weather_service.dart';
 
 class _FakeSpeechToTextClient implements SpeechToTextClient {
   bool initializeAvailable = true;
@@ -160,6 +162,7 @@ class _FakeLocationService extends LocationService {
   );
   int callCount = 0;
   bool throwException = false;
+  Completer<LocationResult>? pendingResult;
 
   _FakeLocationService() : super();
 
@@ -170,6 +173,7 @@ class _FakeLocationService extends LocationService {
   }) async {
     callCount++;
     if (throwException) throw StateError('LocationService crashed');
+    if (pendingResult != null) return pendingResult!.future;
     return resultToReturn;
   }
 }
@@ -204,21 +208,58 @@ class _FakeGeocodingService extends GeocodingService {
   }
 }
 
+class _FakeWeatherService extends WeatherService {
+  WeatherResult resultToReturn = WeatherResult.success(
+    const WeatherData(
+      description: 'cerah berawan',
+      temperature: 28.4,
+      cityName: 'Batam',
+    ),
+  );
+  int callCount = 0;
+  double? lastLatitude;
+  double? lastLongitude;
+  bool throwException = false;
+  Completer<WeatherResult>? pendingResult;
+
+  _FakeWeatherService() : super();
+
+  @override
+  Future<WeatherResult> getCurrentWeather({
+    required double latitude,
+    required double longitude,
+  }) async {
+    callCount++;
+    lastLatitude = latitude;
+    lastLongitude = longitude;
+    if (throwException) throw StateError('WeatherService crashed');
+    if (pendingResult != null) return pendingResult!.future;
+    return resultToReturn;
+  }
+}
+
 class _Harness {
   _Harness({
     DateTimeService? dateTimeService,
     LocationService? locationService,
     GeocodingService? geocodingService,
+    WeatherService? weatherService,
+    WeatherResponseGenerator? weatherResponseGenerator,
   }) : dateTimeService =
            dateTimeService ?? DateTimeService(now: () => DateTime(2026, 10, 16)),
        locationService = locationService ?? _FakeLocationService(),
-       geocodingService = geocodingService ?? _FakeGeocodingService();
+       geocodingService = geocodingService ?? _FakeGeocodingService(),
+       weatherService = weatherService ?? _FakeWeatherService(),
+       weatherResponseGenerator =
+           weatherResponseGenerator ?? const WeatherResponseGenerator();
 
   final _FakeSpeechToTextClient speechClient = _FakeSpeechToTextClient();
   final _FakeTtsService ttsService = _FakeTtsService();
   final DateTimeService dateTimeService;
   final LocationService locationService;
   final GeocodingService geocodingService;
+  final WeatherService weatherService;
+  final WeatherResponseGenerator weatherResponseGenerator;
   late final SpeechToTextService speechService = SpeechToTextService(
     client: speechClient,
   );
@@ -228,6 +269,8 @@ class _Harness {
     ttsService: ttsService,
     locationService: locationService,
     geocodingService: geocodingService,
+    weatherService: weatherService,
+    weatherResponseGenerator: weatherResponseGenerator,
   );
 
   Future<void> start() async {
@@ -894,6 +937,429 @@ void main() {
           'Terjadi kesalahan saat memproses informasi lokasi.',
         );
         expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+    });
+
+    group('weather command (TASK-54)', () {
+      test(
+        '1. weather command succeeds from parser through VoiceController, gets location & weather, speaks formatted sentence, and transitions processing -> speaking -> idle',
+        () async {
+          final fakeLocation = _FakeLocationService();
+          final fakeWeather = _FakeWeatherService();
+          final harness = _Harness(
+            locationService: fakeLocation,
+            weatherService: fakeWeather,
+          );
+
+          final observedStates = <VoiceInteractionState>[];
+          harness.controller.addListener(() {
+            observedStates.add(harness.controller.state);
+          });
+
+          await harness.startAndConfirmListening();
+          await harness.emitFinalAndComplete('cuaca');
+
+          expect(fakeLocation.callCount, 1);
+          expect(fakeWeather.callCount, 1);
+          expect(fakeWeather.lastLatitude, 1.1301);
+          expect(fakeWeather.lastLongitude, 104.0529);
+
+          expect(harness.ttsService.responseCallCount, 1);
+          expect(
+            harness.ttsService.spokenText,
+            'Cuaca di Batam saat ini cerah berawan dengan suhu 28 derajat Celsius.',
+          );
+          expect(observedStates, containsAllInOrder([
+            VoiceInteractionState.processing,
+            VoiceInteractionState.speaking,
+            VoiceInteractionState.idle,
+          ]));
+          expect(harness.controller.state, VoiceInteractionState.idle);
+          expect(harness.controller.hasActiveSession, isFalse);
+          harness.controller.dispose();
+        },
+      );
+
+      test('2. weather command works with other weather phrasing like "bagaimana cuaca hari ini" and "ramalan cuaca"', () async {
+        final fakeWeather = _FakeWeatherService();
+        final harness = _Harness(weatherService: fakeWeather);
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('bagaimana cuaca hari ini');
+
+        expect(fakeWeather.callCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          'Cuaca di Batam saat ini cerah berawan dengan suhu 28 derajat Celsius.',
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('ramalan cuaca');
+
+        expect(fakeWeather.callCount, 2);
+        harness.controller.dispose();
+      });
+
+      test('3. weather command speaks error when location permission is denied', () async {
+        final fakeLocation = _FakeLocationService()
+          ..resultToReturn = LocationResult.permissionDenied();
+        final fakeWeather = _FakeWeatherService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          weatherService: fakeWeather,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeLocation.callCount, 1);
+        expect(fakeWeather.callCount, 0);
+        expect(
+          harness.ttsService.spokenText,
+          LocationPermissionMessages.denied,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('4. weather command speaks error when location permission is denied forever', () async {
+        final fakeLocation = _FakeLocationService()
+          ..resultToReturn = LocationResult.permissionDeniedForever();
+        final fakeWeather = _FakeWeatherService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          weatherService: fakeWeather,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeLocation.callCount, 1);
+        expect(fakeWeather.callCount, 0);
+        expect(
+          harness.ttsService.spokenText,
+          LocationPermissionMessages.deniedForever,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('5. weather command speaks error when location service is disabled', () async {
+        final fakeLocation = _FakeLocationService()
+          ..resultToReturn = LocationResult.serviceDisabled();
+        final fakeWeather = _FakeWeatherService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          weatherService: fakeWeather,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeLocation.callCount, 1);
+        expect(fakeWeather.callCount, 0);
+        expect(
+          harness.ttsService.spokenText,
+          LocationPermissionMessages.serviceDisabled,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('6. weather command speaks error when location request times out', () async {
+        final fakeLocation = _FakeLocationService()
+          ..resultToReturn = LocationResult.timeout();
+        final fakeWeather = _FakeWeatherService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          weatherService: fakeWeather,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeLocation.callCount, 1);
+        expect(fakeWeather.callCount, 0);
+        expect(
+          harness.ttsService.spokenText,
+          LocationMessages.timeout,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('7. weather command speaks error when location fails', () async {
+        final fakeLocation = _FakeLocationService()
+          ..resultToReturn = LocationResult.failure(LocationMessages.failure);
+        final fakeWeather = _FakeWeatherService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          weatherService: fakeWeather,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeLocation.callCount, 1);
+        expect(fakeWeather.callCount, 0);
+        expect(
+          harness.ttsService.spokenText,
+          LocationMessages.failure,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('8. weather command speaks unconfigured message when API key is missing', () async {
+        final fakeWeather = _FakeWeatherService()
+          ..resultToReturn = WeatherResult.unconfigured();
+        final harness = _Harness(weatherService: fakeWeather);
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeWeather.callCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          WeatherMessages.unconfigured,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('9. weather command speaks unauthorized message when API key is invalid', () async {
+        final fakeWeather = _FakeWeatherService()
+          ..resultToReturn = WeatherResult.unauthorized();
+        final harness = _Harness(weatherService: fakeWeather);
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeWeather.callCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          WeatherMessages.unauthorized,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('10. weather command speaks rate limited message when quota exceeded', () async {
+        final fakeWeather = _FakeWeatherService()
+          ..resultToReturn = WeatherResult.rateLimited();
+        final harness = _Harness(weatherService: fakeWeather);
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeWeather.callCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          WeatherMessages.rateLimited,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('11. weather command speaks not found message when location weather is not found', () async {
+        final fakeWeather = _FakeWeatherService()
+          ..resultToReturn = WeatherResult.notFound();
+        final harness = _Harness(weatherService: fakeWeather);
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeWeather.callCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          WeatherMessages.notFound,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('12. weather command speaks timeout message when weather request times out', () async {
+        final fakeWeather = _FakeWeatherService()
+          ..resultToReturn = WeatherResult.timeout();
+        final harness = _Harness(weatherService: fakeWeather);
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeWeather.callCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          WeatherMessages.timeout,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('13. weather command speaks network error when weather connection fails', () async {
+        final fakeWeather = _FakeWeatherService()
+          ..resultToReturn = WeatherResult.networkError();
+        final harness = _Harness(weatherService: fakeWeather);
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeWeather.callCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          WeatherMessages.networkError,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('14. weather command speaks API error when weather service returns api error', () async {
+        final fakeWeather = _FakeWeatherService()
+          ..resultToReturn = WeatherResult.apiError();
+        final harness = _Harness(weatherService: fakeWeather);
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeWeather.callCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          WeatherMessages.apiError,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('15. weather command speaks failure message when weather service reports generic failure', () async {
+        final fakeWeather = _FakeWeatherService()
+          ..resultToReturn = WeatherResult.failure(WeatherMessages.failure);
+        final harness = _Harness(weatherService: fakeWeather);
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeWeather.callCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          WeatherMessages.failure,
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('16. weather command handles unexpected exceptions from LocationService safely', () async {
+        final fakeLocation = _FakeLocationService()..throwException = true;
+        final fakeWeather = _FakeWeatherService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          weatherService: fakeWeather,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeWeather.callCount, 0);
+        expect(
+          harness.ttsService.spokenText,
+          'Terjadi kesalahan saat memproses informasi cuaca.',
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('17. weather command handles unexpected exceptions from WeatherService safely', () async {
+        final fakeWeather = _FakeWeatherService()..throwException = true;
+        final harness = _Harness(weatherService: fakeWeather);
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeWeather.callCount, 1);
+        expect(
+          harness.ttsService.spokenText,
+          'Terjadi kesalahan saat memproses informasi cuaca.',
+        );
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('18. cancel during weather processing aborts speaking and returns to idle', () async {
+        final fakeWeather = _FakeWeatherService()
+          ..pendingResult = Completer<WeatherResult>();
+        final harness = _Harness(weatherService: fakeWeather);
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeWeather.callCount, 1);
+        expect(harness.controller.state, VoiceInteractionState.processing);
+
+        await harness.controller.cancel();
+        expect(harness.controller.state, VoiceInteractionState.idle);
+
+        fakeWeather.pendingResult!.complete(fakeWeather.resultToReturn);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(harness.ttsService.spokenTexts, [AppStrings.voiceConfirmation]);
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('19. cancel during location retrieval aborts weather call and TTS', () async {
+        final fakeLocation = _FakeLocationService()
+          ..pendingResult = Completer<LocationResult>();
+        final fakeWeather = _FakeWeatherService();
+        final harness = _Harness(
+          locationService: fakeLocation,
+          weatherService: fakeWeather,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(fakeLocation.callCount, 1);
+        expect(harness.controller.state, VoiceInteractionState.processing);
+
+        await harness.controller.cancel();
+        expect(harness.controller.state, VoiceInteractionState.idle);
+
+        fakeLocation.pendingResult!.complete(fakeLocation.resultToReturn);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(fakeWeather.callCount, 0);
+        expect(harness.ttsService.spokenTexts, [AppStrings.voiceConfirmation]);
+        expect(harness.controller.state, VoiceInteractionState.idle);
+        harness.controller.dispose();
+      });
+
+      test('20. non-weather commands (day, date, time, location, unknown) continue working without interference', () async {
+        final harness = _Harness();
+
+        // 1. day
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('hari ini');
+        expect(harness.ttsService.spokenText, 'Hari ini hari Jumat.');
+
+        // 2. date
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('tanggal berapa');
+        expect(harness.ttsService.spokenText, 'Hari ini tanggal 16 Oktober 2026.');
+
+        // 3. time
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('jam berapa');
+        expect(harness.ttsService.spokenText, contains('pukul'));
+
+        // 4. location
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('lokasi');
+        expect(harness.ttsService.spokenText, 'Lokasi Anda berada di sekitar Mega Mall Batam, Kota Batam.');
+
+        // 5. unknown
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('buka youtube dong');
+        expect(harness.ttsService.spokenText, VoiceController.unsupportedCommandResponse);
+
         harness.controller.dispose();
       });
     });

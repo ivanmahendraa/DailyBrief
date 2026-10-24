@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:daily_brief/core/constants/app_strings.dart';
+import 'package:daily_brief/features/voice/command_parser.dart';
 import 'package:daily_brief/features/voice/voice_controller.dart';
+import 'package:daily_brief/services/command_history_service.dart';
 import 'package:daily_brief/services/geocoding_service.dart';
 import 'package:daily_brief/services/location_service.dart';
 import 'package:daily_brief/services/speech_to_text_service.dart';
@@ -25,6 +27,11 @@ Position _createPosition({
     speed: 0.0,
     speedAccuracy: 0.0,
   );
+}
+
+class _NoOpCommandHistoryWriter implements CommandHistoryWriter {
+  @override
+  Future<void> record(VoiceCommand command) async {}
 }
 
 class _StubTtsClient implements TtsClient {
@@ -130,8 +137,9 @@ class _IntegrationTtsService extends TtsService {
   bool get isSpeaking => speaking;
 
   String? get lastSpokenResponse {
-    final nonConfirmation =
-        spokenTexts.where((t) => t != AppStrings.voiceConfirmation).toList();
+    final nonConfirmation = spokenTexts
+        .where((t) => t != AppStrings.voiceConfirmation)
+        .toList();
     return nonConfirmation.isNotEmpty ? nonConfirmation.last : null;
   }
 
@@ -202,7 +210,9 @@ class _IntegrationLocationClient implements LocationClient {
   Future<bool> openLocationSettings() async => true;
 
   @override
-  Future<Position> getCurrentPosition({LocationSettings? locationSettings}) async {
+  Future<Position> getCurrentPosition({
+    LocationSettings? locationSettings,
+  }) async {
     getPositionCallCount++;
     if (delay != null) {
       await Future<void>.delayed(delay!);
@@ -255,16 +265,19 @@ class _LocationTestFixture {
   final geocodingClient = _IntegrationGeocodingClient();
 
   late final LocationService locationService = LocationService(locationClient);
-  late final GeocodingService geocodingService =
-      GeocodingService(geocodingClient);
-  late final SpeechToTextService speechService =
-      SpeechToTextService(client: speechClient);
+  late final GeocodingService geocodingService = GeocodingService(
+    geocodingClient,
+  );
+  late final SpeechToTextService speechService = SpeechToTextService(
+    client: speechClient,
+  );
 
   late final VoiceController controller = VoiceController(
     speechToTextService: speechService,
     ttsService: ttsService,
     locationService: locationService,
     geocodingService: geocodingService,
+    commandHistoryWriter: _NoOpCommandHistoryWriter(),
   );
 
   Future<void> startAndConfirmListening() async {
@@ -303,36 +316,30 @@ void main() {
     });
 
     group('Alur Sukses (End-to-End Success Flow)', () {
-      test(
-        'Perintah suara lokasi -> CommandParser -> VoiceController -> LocationService -> GeocodingService -> TTS -> idle',
-        () async {
-          await fixture.startAndConfirmListening();
-          expect(fixture.controller.state, VoiceInteractionState.listening);
+      test('Perintah suara lokasi -> CommandParser -> VoiceController -> LocationService -> GeocodingService -> TTS -> idle', () async {
+        await fixture.startAndConfirmListening();
+        expect(fixture.controller.state, VoiceInteractionState.listening);
 
-          await fixture.emitCommandAndComplete('saya di mana sekarang');
+        await fixture.emitCommandAndComplete('saya di mana sekarang');
 
-          expect(fixture.locationClient.getPositionCallCount, 1);
-          expect(fixture.geocodingClient.callCount, 1);
-          expect(fixture.geocodingClient.lastLatitude, 1.1301);
-          expect(fixture.geocodingClient.lastLongitude, 104.0529);
+        expect(fixture.locationClient.getPositionCallCount, 1);
+        expect(fixture.geocodingClient.callCount, 1);
+        expect(fixture.geocodingClient.lastLatitude, 1.1301);
+        expect(fixture.geocodingClient.lastLongitude, 104.0529);
 
-          expect(
-            fixture.ttsService.lastSpokenResponse,
-            'Lokasi Anda berada di sekitar Mega Mall Batam, Kota Batam.',
-          );
-          expect(fixture.controller.state, VoiceInteractionState.idle);
-          expect(fixture.controller.hasActiveSession, isFalse);
-        },
-      );
+        expect(
+          fixture.ttsService.lastSpokenResponse,
+          'Lokasi Anda berada di sekitar Mega Mall Batam, Kota Batam.',
+        );
+        expect(fixture.controller.state, VoiceInteractionState.idle);
+        expect(fixture.controller.hasActiveSession, isFalse);
+      });
 
       test(
         'Alur sukses lokasi umum (hanya kota dan provinsi tanpa placeName)',
         () async {
           fixture.geocodingClient.resultToReturn = GeocodingResult.success(
-            const LocationAddress(
-              city: 'Batam',
-              province: 'Kepulauan Riau',
-            ),
+            const LocationAddress(city: 'Batam', province: 'Kepulauan Riau'),
           );
 
           await fixture.startAndConfirmListening();
@@ -346,35 +353,33 @@ void main() {
         },
       );
 
-      test(
-        'Verifikasi transisi state lengkap: listening -> processing -> speaking -> idle',
-        () async {
-          final ttsCompleter = Completer<TtsPlaybackResult>();
-          fixture.ttsService.pendingResponse = ttsCompleter;
+      test('Verifikasi transisi state lengkap: listening -> processing -> speaking -> idle', () async {
+        final ttsCompleter = Completer<TtsPlaybackResult>();
+        fixture.ttsService.pendingResponse = ttsCompleter;
 
-          await fixture.startAndConfirmListening();
-          expect(fixture.controller.state, VoiceInteractionState.listening);
+        await fixture.startAndConfirmListening();
+        expect(fixture.controller.state, VoiceInteractionState.listening);
 
-          fixture.speechClient.emitResult('lokasi saya');
-          fixture.speechClient.emitStatus('done');
+        fixture.speechClient.emitResult('lokasi saya');
+        fixture.speechClient.emitStatus('done');
 
-          await Future<void>.delayed(Duration.zero);
-          await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
 
-          expect(fixture.controller.state, VoiceInteractionState.speaking);
+        expect(fixture.controller.state, VoiceInteractionState.speaking);
 
-          ttsCompleter.complete(TtsPlaybackResult.success());
-          await Future<void>.delayed(Duration.zero);
+        ttsCompleter.complete(TtsPlaybackResult.success());
+        await Future<void>.delayed(Duration.zero);
 
-          expect(fixture.controller.state, VoiceInteractionState.idle);
-        },
-      );
+        expect(fixture.controller.state, VoiceInteractionState.idle);
+      });
     });
 
     group('Uji Kegagalan Layanan Lokasi (Location Failure Scenarios)', () {
       test('1. Izin lokasi ditolak (permission denied)', () async {
         fixture.locationClient.checkPermissionValue = LocationPermission.denied;
-        fixture.locationClient.requestPermissionValue = LocationPermission.denied;
+        fixture.locationClient.requestPermissionValue =
+            LocationPermission.denied;
 
         await fixture.startAndConfirmListening();
         await fixture.emitCommandAndComplete('lokasi');
@@ -427,26 +432,26 @@ void main() {
         await fixture.emitCommandAndComplete('lokasi');
 
         expect(fixture.geocodingClient.callCount, 0);
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          LocationMessages.timeout,
-        );
+        expect(fixture.ttsService.lastSpokenResponse, LocationMessages.timeout);
         expect(fixture.controller.state, VoiceInteractionState.idle);
       });
 
-      test('5. Kegagalan pengambilan posisi dari platform geolocator', () async {
-        fixture.locationClient.throwOnGetPosition = true;
+      test(
+        '5. Kegagalan pengambilan posisi dari platform geolocator',
+        () async {
+          fixture.locationClient.throwOnGetPosition = true;
 
-        await fixture.startAndConfirmListening();
-        await fixture.emitCommandAndComplete('saya berada di mana');
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('saya berada di mana');
 
-        expect(fixture.geocodingClient.callCount, 0);
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          contains(LocationMessages.failure),
-        );
-        expect(fixture.controller.state, VoiceInteractionState.idle);
-      });
+          expect(fixture.geocodingClient.callCount, 0);
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            contains(LocationMessages.failure),
+          );
+          expect(fixture.controller.state, VoiceInteractionState.idle);
+        },
+      );
 
       test('6. Reverse geocoding mengembalikan notFound', () async {
         fixture.geocodingClient.resultToReturn = GeocodingResult.notFound();
@@ -491,31 +496,38 @@ void main() {
         expect(fixture.controller.state, VoiceInteractionState.idle);
       });
 
-      test('9. Geocoding belum dikonfigurasi dengan API key (unconfigured)', () async {
-        fixture.geocodingClient.resultToReturn = GeocodingResult.unconfigured();
+      test(
+        '9. Geocoding belum dikonfigurasi dengan API key (unconfigured)',
+        () async {
+          fixture.geocodingClient.resultToReturn =
+              GeocodingResult.unconfigured();
 
-        await fixture.startAndConfirmListening();
-        await fixture.emitCommandAndComplete('posisi saya');
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('posisi saya');
 
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          GeocodingMessages.unconfigured,
-        );
-        expect(fixture.controller.state, VoiceInteractionState.idle);
-      });
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            GeocodingMessages.unconfigured,
+          );
+          expect(fixture.controller.state, VoiceInteractionState.idle);
+        },
+      );
 
-      test('10. Exception tak terduga pada GeocodingService ditangani dengan aman', () async {
-        fixture.geocodingClient.throwException = true;
+      test(
+        '10. Exception tak terduga pada GeocodingService ditangani dengan aman',
+        () async {
+          fixture.geocodingClient.throwException = true;
 
-        await fixture.startAndConfirmListening();
-        await fixture.emitCommandAndComplete('lokasi');
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('lokasi');
 
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          contains(GeocodingMessages.failure),
-        );
-        expect(fixture.controller.state, VoiceInteractionState.idle);
-      });
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            contains(GeocodingMessages.failure),
+          );
+          expect(fixture.controller.state, VoiceInteractionState.idle);
+        },
+      );
 
       test('11. Pembatalan sesi di tengah pengambilan lokasi menghentikan respons suara', () async {
         fixture.locationClient.delay = const Duration(milliseconds: 100);

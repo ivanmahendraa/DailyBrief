@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:daily_brief/core/constants/app_strings.dart';
+import 'package:daily_brief/features/voice/command_parser.dart';
 import 'package:daily_brief/features/voice/voice_controller.dart';
 import 'package:daily_brief/features/voice/weather_response_generator.dart';
+import 'package:daily_brief/services/command_history_service.dart';
 import 'package:daily_brief/services/date_time_service.dart';
 import 'package:daily_brief/services/location_service.dart';
 import 'package:daily_brief/services/speech_to_text_service.dart';
@@ -27,6 +29,11 @@ Position _createPosition({
     speed: 0.0,
     speedAccuracy: 0.0,
   );
+}
+
+class _NoOpCommandHistoryWriter implements CommandHistoryWriter {
+  @override
+  Future<void> record(VoiceCommand command) async {}
 }
 
 class _StubTtsClient implements TtsClient {
@@ -132,8 +139,9 @@ class _IntegrationTtsService extends TtsService {
   bool get isSpeaking => speaking;
 
   String? get lastSpokenResponse {
-    final nonConfirmation =
-        spokenTexts.where((t) => t != AppStrings.voiceConfirmation).toList();
+    final nonConfirmation = spokenTexts
+        .where((t) => t != AppStrings.voiceConfirmation)
+        .toList();
     return nonConfirmation.isNotEmpty ? nonConfirmation.last : null;
   }
 
@@ -204,7 +212,9 @@ class _IntegrationLocationClient implements LocationClient {
   Future<bool> openLocationSettings() async => true;
 
   @override
-  Future<Position> getCurrentPosition({LocationSettings? locationSettings}) async {
+  Future<Position> getCurrentPosition({
+    LocationSettings? locationSettings,
+  }) async {
     getPositionCallCount++;
     if (delay != null) {
       await Future<void>.delayed(delay!);
@@ -262,10 +272,12 @@ class _WeatherTestFixture {
 
   late final LocationService locationService = LocationService(locationClient);
   late final WeatherService weatherService = WeatherService(weatherClient);
-  late final SpeechToTextService speechService =
-      SpeechToTextService(client: speechClient);
-  late final DateTimeService dateTimeService =
-      DateTimeService(now: () => DateTime(2026, 10, 24, 10, 0));
+  late final SpeechToTextService speechService = SpeechToTextService(
+    client: speechClient,
+  );
+  late final DateTimeService dateTimeService = DateTimeService(
+    now: () => DateTime(2026, 10, 24, 10, 0),
+  );
 
   late final VoiceController controller = VoiceController(
     dateTimeService: dateTimeService,
@@ -273,6 +285,7 @@ class _WeatherTestFixture {
     ttsService: ttsService,
     locationService: locationService,
     weatherService: weatherService,
+    commandHistoryWriter: _NoOpCommandHistoryWriter(),
     weatherResponseGenerator: const WeatherResponseGenerator(),
   );
 
@@ -312,27 +325,24 @@ void main() {
     });
 
     group('Alur Sukses (End-to-End Success Flow)', () {
-      test(
-        '1. Perintah suara cuaca -> CommandParser -> VoiceController -> LocationService -> WeatherService -> WeatherResponseGenerator -> TTS -> idle',
-        () async {
-          await fixture.startAndConfirmListening();
-          expect(fixture.controller.state, VoiceInteractionState.listening);
+      test('1. Perintah suara cuaca -> CommandParser -> VoiceController -> LocationService -> WeatherService -> WeatherResponseGenerator -> TTS -> idle', () async {
+        await fixture.startAndConfirmListening();
+        expect(fixture.controller.state, VoiceInteractionState.listening);
 
-          await fixture.emitCommandAndComplete('cuaca');
+        await fixture.emitCommandAndComplete('cuaca');
 
-          expect(fixture.locationClient.getPositionCallCount, 1);
-          expect(fixture.weatherClient.callCount, 1);
-          expect(fixture.weatherClient.lastLatitude, 1.1301);
-          expect(fixture.weatherClient.lastLongitude, 104.0529);
+        expect(fixture.locationClient.getPositionCallCount, 1);
+        expect(fixture.weatherClient.callCount, 1);
+        expect(fixture.weatherClient.lastLatitude, 1.1301);
+        expect(fixture.weatherClient.lastLongitude, 104.0529);
 
-          expect(
-            fixture.ttsService.lastSpokenResponse,
-            'Cuaca di Batam saat ini cerah berawan dengan suhu 28 derajat Celsius.',
-          );
-          expect(fixture.controller.state, VoiceInteractionState.idle);
-          expect(fixture.controller.hasActiveSession, isFalse);
-        },
-      );
+        expect(
+          fixture.ttsService.lastSpokenResponse,
+          'Cuaca di Batam saat ini cerah berawan dengan suhu 28 derajat Celsius.',
+        );
+        expect(fixture.controller.state, VoiceInteractionState.idle);
+        expect(fixture.controller.hasActiveSession, isFalse);
+      });
 
       test(
         '2. Variasi ucapan perintah cuaca didukung oleh alur integrasi',
@@ -360,67 +370,65 @@ void main() {
         },
       );
 
-      test(
-        '3. Verifikasi transisi state lengkap: listening -> processing -> speaking -> idle',
-        () async {
-          final ttsCompleter = Completer<TtsPlaybackResult>();
-          fixture.ttsService.pendingResponse = ttsCompleter;
+      test('3. Verifikasi transisi state lengkap: listening -> processing -> speaking -> idle', () async {
+        final ttsCompleter = Completer<TtsPlaybackResult>();
+        fixture.ttsService.pendingResponse = ttsCompleter;
 
-          final observedStates = <VoiceInteractionState>[];
-          fixture.controller.addListener(() {
-            observedStates.add(fixture.controller.state);
-          });
+        final observedStates = <VoiceInteractionState>[];
+        fixture.controller.addListener(() {
+          observedStates.add(fixture.controller.state);
+        });
 
-          await fixture.startAndConfirmListening();
-          expect(fixture.controller.state, VoiceInteractionState.listening);
+        await fixture.startAndConfirmListening();
+        expect(fixture.controller.state, VoiceInteractionState.listening);
 
-          fixture.speechClient.emitResult('cuaca');
-          fixture.speechClient.emitStatus('done');
+        fixture.speechClient.emitResult('cuaca');
+        fixture.speechClient.emitStatus('done');
 
-          await Future<void>.delayed(Duration.zero);
-          await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
 
-          expect(fixture.controller.state, VoiceInteractionState.speaking);
+        expect(fixture.controller.state, VoiceInteractionState.speaking);
 
-          ttsCompleter.complete(TtsPlaybackResult.success());
-          await Future<void>.delayed(Duration.zero);
+        ttsCompleter.complete(TtsPlaybackResult.success());
+        await Future<void>.delayed(Duration.zero);
 
-          expect(fixture.controller.state, VoiceInteractionState.idle);
-          expect(observedStates, containsAllInOrder([
+        expect(fixture.controller.state, VoiceInteractionState.idle);
+        expect(
+          observedStates,
+          containsAllInOrder([
             VoiceInteractionState.processing,
             VoiceInteractionState.speaking,
             VoiceInteractionState.idle,
-          ]));
-        },
-      );
+          ]),
+        );
+      });
 
-      test(
-        '4. Data cuaca tanpa nama kota (cityName == null) menghasilkan respons valid',
-        () async {
-          fixture.weatherClient.resultToReturn = WeatherResult.success(
-            const WeatherData(
-              description: 'hujan ringan',
-              temperature: 25.6,
-              cityName: null,
-            ),
-          );
+      test('4. Data cuaca tanpa nama kota (cityName == null) menghasilkan respons valid', () async {
+        fixture.weatherClient.resultToReturn = WeatherResult.success(
+          const WeatherData(
+            description: 'hujan ringan',
+            temperature: 25.6,
+            cityName: null,
+          ),
+        );
 
-          await fixture.startAndConfirmListening();
-          await fixture.emitCommandAndComplete('cuaca');
+        await fixture.startAndConfirmListening();
+        await fixture.emitCommandAndComplete('cuaca');
 
-          expect(
-            fixture.ttsService.lastSpokenResponse,
-            'Cuaca saat ini hujan ringan dengan suhu 26 derajat Celsius.',
-          );
-          expect(fixture.controller.state, VoiceInteractionState.idle);
-        },
-      );
+        expect(
+          fixture.ttsService.lastSpokenResponse,
+          'Cuaca saat ini hujan ringan dengan suhu 26 derajat Celsius.',
+        );
+        expect(fixture.controller.state, VoiceInteractionState.idle);
+      });
     });
 
     group('Uji Kegagalan Layanan Lokasi pada Alur Cuaca (Location Failure Scenarios)', () {
       test('1. Izin lokasi ditolak (permission denied)', () async {
         fixture.locationClient.checkPermissionValue = LocationPermission.denied;
-        fixture.locationClient.requestPermissionValue = LocationPermission.denied;
+        fixture.locationClient.requestPermissionValue =
+            LocationPermission.denied;
 
         await fixture.startAndConfirmListening();
         await fixture.emitCommandAndComplete('cuaca');
@@ -473,26 +481,26 @@ void main() {
         await fixture.emitCommandAndComplete('cuaca');
 
         expect(fixture.weatherClient.callCount, 0);
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          LocationMessages.timeout,
-        );
+        expect(fixture.ttsService.lastSpokenResponse, LocationMessages.timeout);
         expect(fixture.controller.state, VoiceInteractionState.idle);
       });
 
-      test('5. Kegagalan pengambilan posisi dari platform geolocator (failure)', () async {
-        fixture.locationClient.throwOnGetPosition = true;
+      test(
+        '5. Kegagalan pengambilan posisi dari platform geolocator (failure)',
+        () async {
+          fixture.locationClient.throwOnGetPosition = true;
 
-        await fixture.startAndConfirmListening();
-        await fixture.emitCommandAndComplete('cuaca');
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('cuaca');
 
-        expect(fixture.weatherClient.callCount, 0);
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          contains(LocationMessages.failure),
-        );
-        expect(fixture.controller.state, VoiceInteractionState.idle);
-      });
+          expect(fixture.weatherClient.callCount, 0);
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            contains(LocationMessages.failure),
+          );
+          expect(fixture.controller.state, VoiceInteractionState.idle);
+        },
+      );
     });
 
     group('Uji Kegagalan Layanan Cuaca & Jaringan (Weather & Network Failure Scenarios)', () {
@@ -511,18 +519,21 @@ void main() {
         expect(fixture.controller.state, VoiceInteractionState.idle);
       });
 
-      test('2. API key tidak valid / tidak diotorisasi (unauthorized / HTTP 401)', () async {
-        fixture.weatherClient.resultToReturn = WeatherResult.unauthorized();
+      test(
+        '2. API key tidak valid / tidak diotorisasi (unauthorized / HTTP 401)',
+        () async {
+          fixture.weatherClient.resultToReturn = WeatherResult.unauthorized();
 
-        await fixture.startAndConfirmListening();
-        await fixture.emitCommandAndComplete('cuaca');
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('cuaca');
 
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          WeatherMessages.unauthorized,
-        );
-        expect(fixture.controller.state, VoiceInteractionState.idle);
-      });
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            WeatherMessages.unauthorized,
+          );
+          expect(fixture.controller.state, VoiceInteractionState.idle);
+        },
+      );
 
       test('3. Batas kuota API terlampaui (rateLimited / HTTP 429)', () async {
         fixture.weatherClient.resultToReturn = WeatherResult.rateLimited();
@@ -537,18 +548,21 @@ void main() {
         expect(fixture.controller.state, VoiceInteractionState.idle);
       });
 
-      test('4. Informasi cuaca untuk lokasi tidak ditemukan (notFound / HTTP 404)', () async {
-        fixture.weatherClient.resultToReturn = WeatherResult.notFound();
+      test(
+        '4. Informasi cuaca untuk lokasi tidak ditemukan (notFound / HTTP 404)',
+        () async {
+          fixture.weatherClient.resultToReturn = WeatherResult.notFound();
 
-        await fixture.startAndConfirmListening();
-        await fixture.emitCommandAndComplete('cuaca');
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('cuaca');
 
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          WeatherMessages.notFound,
-        );
-        expect(fixture.controller.state, VoiceInteractionState.idle);
-      });
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            WeatherMessages.notFound,
+          );
+          expect(fixture.controller.state, VoiceInteractionState.idle);
+        },
+      );
 
       test('5. Batas waktu koneksi ke layanan cuaca habis (timeout)', () async {
         fixture.weatherClient.resultToReturn = WeatherResult.timeout();
@@ -556,10 +570,7 @@ void main() {
         await fixture.startAndConfirmListening();
         await fixture.emitCommandAndComplete('cuaca');
 
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          WeatherMessages.timeout,
-        );
+        expect(fixture.ttsService.lastSpokenResponse, WeatherMessages.timeout);
         expect(fixture.controller.state, VoiceInteractionState.idle);
       });
 
@@ -582,16 +593,14 @@ void main() {
         await fixture.startAndConfirmListening();
         await fixture.emitCommandAndComplete('cuaca');
 
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          WeatherMessages.apiError,
-        );
+        expect(fixture.ttsService.lastSpokenResponse, WeatherMessages.apiError);
         expect(fixture.controller.state, VoiceInteractionState.idle);
       });
 
       test('8. Kegagalan data / format tidak valid (failure)', () async {
-        fixture.weatherClient.resultToReturn =
-            WeatherResult.failure(WeatherMessages.invalidFormat);
+        fixture.weatherClient.resultToReturn = WeatherResult.failure(
+          WeatherMessages.invalidFormat,
+        );
 
         await fixture.startAndConfirmListening();
         await fixture.emitCommandAndComplete('cuaca');
@@ -617,106 +626,112 @@ void main() {
       });
     });
 
-    group('Uji Pembatalan dan Race Condition (Cancellation & Race Conditions)', () {
-      test('1. Pembatalan sesi di tengah pengambilan lokasi menghentikan alur cuaca & TTS', () async {
-        fixture.locationClient.delay = const Duration(milliseconds: 100);
+    group(
+      'Uji Pembatalan dan Race Condition (Cancellation & Race Conditions)',
+      () {
+        test('1. Pembatalan sesi di tengah pengambilan lokasi menghentikan alur cuaca & TTS', () async {
+          fixture.locationClient.delay = const Duration(milliseconds: 100);
 
-        await fixture.startAndConfirmListening();
-        fixture.speechClient.emitResult('cuaca');
-        fixture.speechClient.emitStatus('done');
+          await fixture.startAndConfirmListening();
+          fixture.speechClient.emitResult('cuaca');
+          fixture.speechClient.emitStatus('done');
 
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        await fixture.controller.cancel();
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await fixture.controller.cancel();
 
-        await Future<void>.delayed(const Duration(milliseconds: 120));
+          await Future<void>.delayed(const Duration(milliseconds: 120));
 
-        expect(fixture.weatherClient.callCount, 0);
-        expect(fixture.ttsService.lastSpokenResponse, isNull);
-        expect(fixture.controller.state, VoiceInteractionState.idle);
-      });
+          expect(fixture.weatherClient.callCount, 0);
+          expect(fixture.ttsService.lastSpokenResponse, isNull);
+          expect(fixture.controller.state, VoiceInteractionState.idle);
+        });
 
-      test('2. Pembatalan sesi di tengah pemanggilan API cuaca menghentikan TTS', () async {
-        fixture.weatherClient.delay = const Duration(milliseconds: 100);
+        test(
+          '2. Pembatalan sesi di tengah pemanggilan API cuaca menghentikan TTS',
+          () async {
+            fixture.weatherClient.delay = const Duration(milliseconds: 100);
 
-        await fixture.startAndConfirmListening();
-        fixture.speechClient.emitResult('cuaca');
-        fixture.speechClient.emitStatus('done');
+            await fixture.startAndConfirmListening();
+            fixture.speechClient.emitResult('cuaca');
+            fixture.speechClient.emitStatus('done');
 
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        await fixture.controller.cancel();
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            await fixture.controller.cancel();
 
-        await Future<void>.delayed(const Duration(milliseconds: 120));
+            await Future<void>.delayed(const Duration(milliseconds: 120));
 
-        expect(fixture.ttsService.lastSpokenResponse, isNull);
-        expect(fixture.controller.state, VoiceInteractionState.idle);
-      });
-
-      test('3. Pembatalan sesi saat TTS membaca cuaca langsung menghentikan playback', () async {
-        final ttsCompleter = Completer<TtsPlaybackResult>();
-        fixture.ttsService.pendingResponse = ttsCompleter;
-
-        await fixture.startAndConfirmListening();
-        fixture.speechClient.emitResult('cuaca');
-        fixture.speechClient.emitStatus('done');
-
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
-
-        expect(fixture.controller.state, VoiceInteractionState.speaking);
-
-        await fixture.controller.cancel();
-
-        expect(fixture.controller.state, VoiceInteractionState.idle);
-        expect(fixture.ttsService.speaking, isFalse);
-      });
-
-      test('4. Dispose controller saat proses cuaca asinkron sedang berjalan', () async {
-        fixture.weatherClient.delay = const Duration(milliseconds: 100);
-
-        await fixture.startAndConfirmListening();
-        fixture.speechClient.emitResult('cuaca');
-        fixture.speechClient.emitStatus('done');
-
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        fixture.controller.dispose();
-
-        await Future<void>.delayed(const Duration(milliseconds: 120));
-
-        expect(fixture.ttsService.lastSpokenResponse, isNull);
-      });
-
-      test('5. Sesi lama yang selesai terlambat tidak memengaruhi sesi baru', () async {
-        fixture.weatherClient.delay = const Duration(milliseconds: 80);
-
-        // Sesi 1: Perintah cuaca dengan pemanggilan API yang lambat
-        await fixture.startAndConfirmListening();
-        fixture.speechClient.emitResult('cuaca');
-        fixture.speechClient.emitStatus('done');
-
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        // Pengguna membatalkan sesi 1
-        await fixture.controller.cancel();
-
-        // Sesi 2: Pengguna menanyakan waktu
-        await fixture.startAndConfirmListening();
-        await fixture.emitCommandAndComplete('jam berapa');
-
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          contains('pukul'),
+            expect(fixture.ttsService.lastSpokenResponse, isNull);
+            expect(fixture.controller.state, VoiceInteractionState.idle);
+          },
         );
 
-        // Tunggu hingga operasi cuaca sesi 1 yang tertunda selesai
-        await Future<void>.delayed(const Duration(milliseconds: 100));
+        test('3. Pembatalan sesi saat TTS membaca cuaca langsung menghentikan playback', () async {
+          final ttsCompleter = Completer<TtsPlaybackResult>();
+          fixture.ttsService.pendingResponse = ttsCompleter;
 
-        // Pastikan respon cuaca sesi 1 tidak menimpa respon sesi 2
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          contains('pukul'),
+          await fixture.startAndConfirmListening();
+          fixture.speechClient.emitResult('cuaca');
+          fixture.speechClient.emitStatus('done');
+
+          await Future<void>.delayed(Duration.zero);
+          await Future<void>.delayed(Duration.zero);
+
+          expect(fixture.controller.state, VoiceInteractionState.speaking);
+
+          await fixture.controller.cancel();
+
+          expect(fixture.controller.state, VoiceInteractionState.idle);
+          expect(fixture.ttsService.speaking, isFalse);
+        });
+
+        test(
+          '4. Dispose controller saat proses cuaca asinkron sedang berjalan',
+          () async {
+            fixture.weatherClient.delay = const Duration(milliseconds: 100);
+
+            await fixture.startAndConfirmListening();
+            fixture.speechClient.emitResult('cuaca');
+            fixture.speechClient.emitStatus('done');
+
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            fixture.controller.dispose();
+
+            await Future<void>.delayed(const Duration(milliseconds: 120));
+
+            expect(fixture.ttsService.lastSpokenResponse, isNull);
+          },
         );
-        expect(fixture.controller.state, VoiceInteractionState.idle);
-      });
-    });
+
+        test(
+          '5. Sesi lama yang selesai terlambat tidak memengaruhi sesi baru',
+          () async {
+            fixture.weatherClient.delay = const Duration(milliseconds: 80);
+
+            // Sesi 1: Perintah cuaca dengan pemanggilan API yang lambat
+            await fixture.startAndConfirmListening();
+            fixture.speechClient.emitResult('cuaca');
+            fixture.speechClient.emitStatus('done');
+
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            // Pengguna membatalkan sesi 1
+            await fixture.controller.cancel();
+
+            // Sesi 2: Pengguna menanyakan waktu
+            await fixture.startAndConfirmListening();
+            await fixture.emitCommandAndComplete('jam berapa');
+
+            expect(fixture.ttsService.lastSpokenResponse, contains('pukul'));
+
+            // Tunggu hingga operasi cuaca sesi 1 yang tertunda selesai
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+
+            // Pastikan respon cuaca sesi 1 tidak menimpa respon sesi 2
+            expect(fixture.ttsService.lastSpokenResponse, contains('pukul'));
+            expect(fixture.controller.state, VoiceInteractionState.idle);
+          },
+        );
+      },
+    );
 
     group('Uji Isolasi Perintah Lain (Command Isolation)', () {
       test('Perintah non-cuaca (day, date, time, unknown) bekerja normal tanpa interferensi cuaca', () async {
@@ -728,12 +743,18 @@ void main() {
         // 2. date
         await fixture.startAndConfirmListening();
         await fixture.emitCommandAndComplete('tanggal berapa');
-        expect(fixture.ttsService.lastSpokenResponse, 'Hari ini tanggal 24 Oktober 2026.');
+        expect(
+          fixture.ttsService.lastSpokenResponse,
+          'Hari ini tanggal 24 Oktober 2026.',
+        );
 
         // 3. time
         await fixture.startAndConfirmListening();
         await fixture.emitCommandAndComplete('jam berapa');
-        expect(fixture.ttsService.lastSpokenResponse, contains('pukul 10 pagi'));
+        expect(
+          fixture.ttsService.lastSpokenResponse,
+          contains('pukul 10 pagi'),
+        );
 
         // 4. unknown
         await fixture.startAndConfirmListening();

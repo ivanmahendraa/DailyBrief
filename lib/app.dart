@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
 import 'features/splash/screens/splash_screen.dart';
+import 'features/voice/voice_controller.dart';
 import 'services/speech_to_text_service.dart';
 import 'services/tts_service.dart';
 
@@ -12,8 +13,14 @@ import 'services/tts_service.dart';
 class DailyBriefApp extends StatefulWidget {
   final TtsService? ttsService;
   final SpeechToTextService? speechToTextService;
+  final VoiceController? voiceController;
 
-  const DailyBriefApp({super.key, this.ttsService, this.speechToTextService});
+  const DailyBriefApp({
+    super.key,
+    this.ttsService,
+    this.speechToTextService,
+    this.voiceController,
+  });
 
   @override
   State<DailyBriefApp> createState() => _DailyBriefAppState();
@@ -33,6 +40,7 @@ class _DailyBriefAppState extends State<DailyBriefApp> {
       home: SplashScreen(
         ttsService: _ttsService,
         speechToTextService: _speechToTextService,
+        voiceController: widget.voiceController,
       ),
     );
   }

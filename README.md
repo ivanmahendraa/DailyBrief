@@ -16,6 +16,11 @@ Cloud Firestore stores only recognized command categories and server timestamps.
 It does not store speech transcripts, audio, responses, or location coordinates.
 The Firestore access rules are in `firestore.rules`.
 
+Reverse geocoding uses the device's native Android/iOS geocoder and does not
+require a Google Geocoding API key. Results depend on the platform geocoder and
+may require network access; the app uses the returned city/region only for the
+current spoken response and does not persist coordinates.
+
 Firebase Analytics is not integrated, and the app does not send product
 analytics events. If analytics is considered in the future, its purpose,
 collected fields, and user privacy impact must be reviewed before enabling it;

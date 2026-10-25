@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show Locale;
+import 'package:geocoding/geocoding.dart';
 import 'package:daily_brief/models/location_address.dart';
 
 export 'package:daily_brief/models/location_address.dart';
@@ -108,6 +111,77 @@ abstract interface class GeocodingClient {
   });
 }
 
+typedef DevicePlacemarkLookup = Future<List<Placemark>> Function(
+  double latitude,
+  double longitude,
+);
+
+/// Reverse geocoding backed by the native Android/iOS geocoder.
+class DeviceGeocodingClient implements GeocodingClient {
+  DeviceGeocodingClient({DevicePlacemarkLookup? lookup})
+    : _lookup = lookup ?? _lookupDevicePlacemark;
+
+  static final Geocoding _geocoding = Geocoding(
+    locale: const Locale('id', 'ID'),
+  );
+
+  final DevicePlacemarkLookup _lookup;
+
+  static Future<List<Placemark>> _lookupDevicePlacemark(
+    double latitude,
+    double longitude,
+  ) => _geocoding.placemarkFromCoordinates(latitude, longitude);
+
+  @override
+  Future<GeocodingResult> reverseGeocode({
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      final placemarks = await _lookup(latitude, longitude);
+      if (placemarks.isEmpty) return GeocodingResult.notFound();
+
+      final placemark = placemarks.first;
+      final city =
+          _nonEmpty(placemark.locality) ??
+          _nonEmpty(placemark.subAdministrativeArea);
+      final subLocality = _nonEmpty(placemark.subLocality);
+      final province = _nonEmpty(placemark.administrativeArea);
+      final country = _nonEmpty(placemark.country);
+      final formattedAddress = [
+        city,
+        province,
+        country,
+      ].whereType<String>().toSet().join(', ');
+
+      final address = LocationAddress(
+        city: city,
+        subLocality: subLocality,
+        province: province,
+        country: country,
+        formattedAddress: formattedAddress.isEmpty ? null : formattedAddress,
+      );
+      if (address.displayName.isEmpty) return GeocodingResult.notFound();
+
+      return GeocodingResult.success(address);
+    } on PlatformException catch (error, stackTrace) {
+      debugPrint(
+        'DeviceGeocodingClient platform error: ${error.code}\n$stackTrace',
+      );
+      if (error.code == 'IO_ERROR') return GeocodingResult.networkError();
+      return GeocodingResult.failure(GeocodingMessages.failure);
+    } catch (error, stackTrace) {
+      debugPrint('DeviceGeocodingClient error: $error\n$stackTrace');
+      return GeocodingResult.failure(GeocodingMessages.failure);
+    }
+  }
+
+  String? _nonEmpty(String? value) {
+    final normalized = value?.trim();
+    return normalized == null || normalized.isEmpty ? null : normalized;
+  }
+}
+
 /// Implementasi client reverse geocoding menggunakan Google Geocoding API (sesuai PRD.md).
 ///
 /// Jika [apiKey] tidak tersedia atau kosong, client mengembalikan status [GeocodingStatus.unconfigured]
@@ -141,14 +215,17 @@ class GoogleGeocodingClient implements GeocodingClient {
     };
 
     final uri = Uri.parse(baseUrl).replace(queryParameters: queryParams);
-    final client =
-        httpClientFactory != null ? httpClientFactory!() : HttpClient();
+    final client = httpClientFactory != null
+        ? httpClientFactory!()
+        : HttpClient();
 
     try {
       final request = await client.getUrl(uri).timeout(timeout);
       final response = await request.close().timeout(timeout);
-      final body =
-          await response.transform(utf8.decoder).join().timeout(timeout);
+      final body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(timeout);
 
       if (response.statusCode != 200) {
         return GeocodingResult.apiError(
@@ -277,7 +354,7 @@ class GeocodingService {
   final GeocodingClient _client;
 
   GeocodingService([GeocodingClient? client])
-    : _client = client ?? GoogleGeocodingClient();
+    : _client = client ?? DeviceGeocodingClient();
 
   /// Menerjemahkan koordinat [latitude] dan [longitude] menjadi [GeocodingResult].
   ///

@@ -5,6 +5,7 @@ import '../../../services/speech_to_text_service.dart';
 import '../../../services/app_initializer.dart';
 import '../../../services/tts_service.dart';
 import '../../home/screens/home_screen.dart';
+import '../../voice/voice_controller.dart';
 
 /// Halaman Splash Screen DailyBrief.
 ///
@@ -17,6 +18,7 @@ class SplashScreen extends StatefulWidget {
   final AppInitializer initializer;
   final TtsService? ttsService;
   final SpeechToTextService? speechToTextService;
+  final VoiceController? voiceController;
   final VoidCallback? onInitialized;
   final bool navigateToHome;
 
@@ -25,6 +27,7 @@ class SplashScreen extends StatefulWidget {
     this.initializer = const AppInitializer(),
     this.ttsService,
     this.speechToTextService,
+    this.voiceController,
     this.onInitialized,
     this.navigateToHome = true,
   });
@@ -111,6 +114,7 @@ class _SplashScreenState extends State<SplashScreen> {
           builder: (_) => HomeScreen(
             speechToTextService: widget.speechToTextService,
             ttsService: widget.ttsService,
+            voiceController: widget.voiceController,
           ),
         ),
       );

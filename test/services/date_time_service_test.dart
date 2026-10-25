@@ -82,13 +82,41 @@ void main() {
       }
     });
 
+    test('formats leap days and year boundaries', () {
+      final cases = [
+        (DateTime(2028, 2, 29), 'Hari ini tanggal 29 Februari 2028.'),
+        (DateTime(2027, 1, 1), 'Hari ini tanggal 1 Januari 2027.'),
+      ];
+
+      for (final (dateTime, expected) in cases) {
+        final service = DateTimeService(now: () => dateTime);
+        expect(service.currentDateResponse, expected);
+      }
+    });
+
     test('formats local time with Indonesian day periods', () {
       final cases = [
         (DateTime(2026, 10, 16, 0), 'Sekarang pukul 12 malam tepat.'),
+        (
+          DateTime(2026, 10, 16, 3, 59),
+          'Sekarang pukul 3 malam lewat 59 menit.',
+        ),
         (DateTime(2026, 10, 16, 4), 'Sekarang pukul 4 pagi tepat.'),
+        (
+          DateTime(2026, 10, 16, 10, 59),
+          'Sekarang pukul 10 pagi lewat 59 menit.',
+        ),
         (DateTime(2026, 10, 16, 11), 'Sekarang pukul 11 siang tepat.'),
         (DateTime(2026, 10, 16, 12), 'Sekarang pukul 12 siang tepat.'),
+        (
+          DateTime(2026, 10, 16, 14, 59),
+          'Sekarang pukul 2 siang lewat 59 menit.',
+        ),
         (DateTime(2026, 10, 16, 15), 'Sekarang pukul 3 sore tepat.'),
+        (
+          DateTime(2026, 10, 16, 18, 59),
+          'Sekarang pukul 6 sore lewat 59 menit.',
+        ),
         (DateTime(2026, 10, 16, 19), 'Sekarang pukul 7 malam tepat.'),
         (
           DateTime(2026, 10, 16, 13, 5),

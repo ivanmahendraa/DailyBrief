@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kDebugMode, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -339,6 +342,33 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
+              if (kDebugMode && defaultTargetPlatform == TargetPlatform.iOS) ...[
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () {
+                        unawaited(
+                          FirebaseCrashlytics.instance.recordError(
+                            StateError('Crashlytics debug non-fatal test'),
+                            StackTrace.current,
+                            reason: 'Temporary iOS debug test',
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.bug_report_outlined),
+                      label: const Text('Uji error non-fatal'),
+                    ),
+                    TextButton.icon(
+                      onPressed: FirebaseCrashlytics.instance.crash,
+                      icon: const Icon(Icons.warning_amber_rounded),
+                      label: const Text('Uji crash'),
+                    ),
+                  ],
+                ),
+                // TODO: Remove temporary Crashlytics test controls after iOS verification.
+              ],
             ],
           ),
         ),

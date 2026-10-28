@@ -28,7 +28,10 @@ Future<void> main() async {
         defaultTargetPlatform == TargetPlatform.iOS;
     if (crashReportingSupported) {
       await CrashReportingService(reporter: FirebaseCrashErrorReporter())
-          .initialize(collectionEnabled: kReleaseMode);
+          .initialize(
+            collectionEnabled:
+                defaultTargetPlatform == TargetPlatform.iOS || kReleaseMode,
+          );
     }
   } else {
     debugPrint('Firebase is not configured for this platform.');

@@ -6,14 +6,14 @@ void main() {
   group('WeatherResponseGenerator (TASK-53)', () {
     const generator = WeatherResponseGenerator();
 
-    test('1. Menghasilkan kalimat normal dengan kota, cuaca, dan suhu bulat', () {
+    test('1. Menghasilkan kalimat dengan lokasi perangkat, cuaca, dan suhu bulat', () {
       const weather = WeatherData(
         description: 'cerah',
         temperature: 30.0,
         cityName: 'Batam',
       );
 
-      final response = generator.generate(weather);
+      final response = generator.generate(weather, locationName: 'Batam');
 
       expect(
         response,
@@ -29,7 +29,7 @@ void main() {
         cityName: 'Batam',
       );
       expect(
-        generator.generate(weatherRoundDown),
+        generator.generate(weatherRoundDown, locationName: 'Batam'),
         equals('Cuaca di Batam saat ini berawan dengan suhu 30 derajat Celsius.'),
       );
 
@@ -40,7 +40,7 @@ void main() {
         cityName: 'Batam',
       );
       expect(
-        generator.generate(weatherRoundUp),
+        generator.generate(weatherRoundUp, locationName: 'Batam'),
         equals('Cuaca di Batam saat ini berawan dengan suhu 30 derajat Celsius.'),
       );
 
@@ -51,7 +51,7 @@ void main() {
         cityName: 'Bandung',
       );
       expect(
-        generator.generate(weatherHalf),
+        generator.generate(weatherHalf, locationName: 'Bandung'),
         equals('Cuaca di Bandung saat ini hujan dengan suhu 26 derajat Celsius.'),
       );
     });
@@ -71,7 +71,7 @@ void main() {
           cityName: 'Jakarta',
         );
 
-        final response = generator.generate(weather);
+        final response = generator.generate(weather, locationName: 'Jakarta');
         expect(
           response,
           equals('Cuaca di Jakarta saat ini $desc dengan suhu 28 derajat Celsius.'),
@@ -86,18 +86,18 @@ void main() {
         cityName: 'Medan',
       );
 
-      final response = generator.generate(weather);
+      final response = generator.generate(weather, locationName: 'Medan');
       expect(
         response,
         equals('Cuaca di Medan saat ini hujan deras dengan suhu 27 derajat Celsius.'),
       );
     });
 
-    test('5. Menghasilkan jawaban yang natural ketika cityName null', () {
+    test('5. Tidak memakai cityName OpenWeather ketika lokasi perangkat tidak tersedia', () {
       const weather = WeatherData(
         description: 'cerah',
         temperature: 31.0,
-        cityName: null,
+        cityName: 'Kangboi',
       );
 
       final response = generator.generate(weather);
@@ -105,6 +105,23 @@ void main() {
       expect(
         response,
         equals('Cuaca saat ini cerah dengan suhu 31 derajat Celsius.'),
+      );
+    });
+
+    test('menggunakan lokasi perangkat terstruktur dengan urutan administratif', () {
+      const weather = WeatherData(
+        description: 'awan mendung',
+        temperature: 25.0,
+        cityName: 'Kangboi',
+      );
+
+      expect(
+        generator.generate(
+          weather,
+          locationName:
+              'Tembesi, Kecamatan Sagulung, Kota Batam, Kepulauan Riau, Indonesia',
+        ),
+        'Cuaca di Tembesi, Kecamatan Sagulung, Kota Batam, Kepulauan Riau, Indonesia saat ini awan mendung dengan suhu 25 derajat Celsius.',
       );
     });
 
@@ -137,7 +154,7 @@ void main() {
         cityName: 'Sapporo',
       );
 
-      final response = generator.generate(weatherCold);
+      final response = generator.generate(weatherCold, locationName: 'Sapporo');
 
       expect(
         response,
@@ -152,21 +169,21 @@ void main() {
         cityName: 'Surabaya',
       );
 
-      final response = generator.generate(weather);
+      final response = generator.generate(weather, locationName: 'Surabaya');
 
       expect(response.trim().isNotEmpty, isTrue);
       expect(response, contains('derajat Celsius'));
       expect(response.endsWith('derajat Celsius.'), isTrue);
     });
 
-    test('9. Menangani whitespace berlebih pada cityName dan description', () {
+    test('9. Menangani whitespace berlebih pada lokasi perangkat dan description', () {
       const weather = WeatherData(
         description: '  hujan rintik-rintik  ',
         temperature: 26.0,
         cityName: '  Kota Batam  ',
       );
 
-      final response = generator.generate(weather);
+      final response = generator.generate(weather, locationName: '  Kota Batam  ');
 
       expect(
         response,
@@ -181,7 +198,7 @@ void main() {
         cityName: 'Batam',
       );
 
-      final response = generator.generate(weather);
+      final response = generator.generate(weather, locationName: 'Batam');
 
       expect(
         response,
@@ -196,9 +213,9 @@ void main() {
         cityName: 'Denpasar',
       );
 
-      final resp1 = generator.generate(weather);
-      final resp2 = generator.generateResponse(weather);
-      final resp3 = WeatherResponseGenerator.format(weather);
+      final resp1 = generator.generate(weather, locationName: 'Denpasar');
+      final resp2 = generator.generateResponse(weather, locationName: 'Denpasar');
+      final resp3 = WeatherResponseGenerator.format(weather, locationName: 'Denpasar');
 
       expect(resp1, equals(resp2));
       expect(resp1, equals(resp3));
@@ -219,7 +236,7 @@ void main() {
 
       final response = generator.generate(weather);
 
-      expect(response, contains('Yogyakarta'));
+      expect(response, isNot(contains('Yogyakarta')));
       expect(response, contains('berawan tebal'));
       expect(response, contains('${weather.roundedTemperature}'));
       expect(response, contains('derajat Celsius'));

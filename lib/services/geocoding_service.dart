@@ -145,16 +145,24 @@ class DeviceGeocodingClient implements GeocodingClient {
       final city =
           _nonEmpty(placemark.locality) ??
           _nonEmpty(placemark.subAdministrativeArea);
+      final street =
+          _nonEmpty(placemark.thoroughfare) ?? _nonEmpty(placemark.street);
+      final streetNumber = _nonEmpty(placemark.subThoroughfare);
       final subLocality = _nonEmpty(placemark.subLocality);
       final province = _nonEmpty(placemark.administrativeArea);
       final country = _nonEmpty(placemark.country);
       final formattedAddress = [
+        street,
+        streetNumber,
+        subLocality,
         city,
         province,
         country,
       ].whereType<String>().toSet().join(', ');
 
       final address = LocationAddress(
+        street: street,
+        streetNumber: streetNumber,
         city: city,
         subLocality: subLocality,
         province: province,
@@ -295,8 +303,9 @@ class GoogleGeocodingClient implements GeocodingClient {
 
     String? locality;
     String? adminAreaLevel2;
+    String? street;
+    String? streetNumber;
     String? subLocality;
-    String? adminAreaLevel3;
     String? province;
     String? country;
     String? placeName;
@@ -311,15 +320,17 @@ class GoogleGeocodingClient implements GeocodingClient {
           <String>{};
       final longName = component['long_name'] as String?;
 
-      if (types.contains('locality')) {
+      if (types.contains('route')) {
+        street = longName;
+      } else if (types.contains('street_number')) {
+        streetNumber = longName;
+      } else if (types.contains('locality')) {
         locality = longName;
       } else if (types.contains('administrative_area_level_2')) {
         adminAreaLevel2 = longName;
       } else if (types.contains('sublocality') ||
           types.contains('sublocality_level_1')) {
         subLocality = longName;
-      } else if (types.contains('administrative_area_level_3')) {
-        adminAreaLevel3 = longName;
       } else if (types.contains('administrative_area_level_1')) {
         province = longName;
       } else if (types.contains('country')) {
@@ -331,11 +342,12 @@ class GoogleGeocodingClient implements GeocodingClient {
     }
 
     final city = locality ?? adminAreaLevel2;
-    final effectiveSubLocality = subLocality ?? adminAreaLevel3;
 
     final locationAddress = LocationAddress(
+      street: street,
+      streetNumber: streetNumber,
       city: city,
-      subLocality: effectiveSubLocality,
+      subLocality: subLocality,
       province: province,
       country: country,
       formattedAddress: formattedAddress,

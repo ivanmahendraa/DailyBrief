@@ -234,7 +234,6 @@ class _IntegrationGeocodingClient implements GeocodingClient {
       city: 'Kota Batam',
       province: 'Kepulauan Riau',
       country: 'Indonesia',
-      formattedAddress: 'Jl. Engku Putri, Batam',
     ),
   );
 
@@ -329,7 +328,7 @@ void main() {
 
         expect(
           fixture.ttsService.lastSpokenResponse,
-          'Lokasi Anda berada di sekitar Mega Mall Batam, Kota Batam.',
+          'Anda berada di Kota Batam, Kepulauan Riau, Indonesia.',
         );
         expect(fixture.controller.state, VoiceInteractionState.idle);
         expect(fixture.controller.hasActiveSession, isFalse);
@@ -347,7 +346,63 @@ void main() {
 
           expect(
             fixture.ttsService.lastSpokenResponse,
-            'Lokasi Anda berada di Batam, Kepulauan Riau.',
+            'Anda berada di Batam, Kepulauan Riau.',
+          );
+          expect(fixture.controller.state, VoiceInteractionState.idle);
+        },
+      );
+
+      test(
+        'respons lokasi hanya memakai komponen administratif yang diizinkan',
+        () async {
+          fixture.geocodingClient.resultToReturn = GeocodingResult.success(
+            const LocationAddress(
+              street: '22C4+R39',
+              streetNumber: '22C4+R39',
+              subLocality: 'Tembesi',
+              district: 'Sagulung',
+              city: 'Kota Batam',
+              province: 'Kepulauan Riau',
+              country: 'Indonesia',
+              formattedAddress: '22C4+R39, Tembesi, Kec. Sagulung, Kota Batam, Kepulauan Riau 29472, Indonesia',
+            ),
+          );
+
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('lokasi saya');
+
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            'Anda berada di Tembesi, Kecamatan Sagulung, Kota Batam, Kepulauan Riau, Indonesia.',
+          );
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            isNot(contains('22C4+R39')),
+          );
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            isNot(contains('29472')),
+          );
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            isNot(contains('Jalan')),
+          );
+        },
+      );
+
+      test(
+        'alamat sukses tanpa komponen alamat memakai fallback aman',
+        () async {
+          fixture.geocodingClient.resultToReturn = GeocodingResult.success(
+            const LocationAddress(),
+          );
+
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('lokasi saya');
+
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            'Maaf, nama lokasi belum berhasil diketahui.',
           );
           expect(fixture.controller.state, VoiceInteractionState.idle);
         },

@@ -5,11 +5,20 @@ import 'package:flutter/foundation.dart';
 /// Memenuhi kebutuhan TASK-47 dan FR-09 pada PRD.md.
 @immutable
 class LocationAddress {
+  /// Nama jalan atau rute sebagaimana diberikan provider.
+  final String? street;
+
+  /// Nomor alamat sebagaimana diberikan provider.
+  final String? streetNumber;
+
+  /// Nama sub-lokalitas; tidak selalu setara dengan kelurahan/desa.
+  final String? subLocality;
+
+  /// Nama kecamatan hanya jika provider mengidentifikasinya secara eksplisit.
+  final String? district;
+
   /// Nama kota atau kabupaten (misal: "Kota Batam", "Batam", "Jakarta Pusat").
   final String? city;
-
-  /// Nama kecamatan atau wilayah sub-lokal jika tersedia.
-  final String? subLocality;
 
   /// Nama provinsi atau region (misal: "Kepulauan Riau", "DKI Jakarta").
   final String? province;
@@ -24,8 +33,11 @@ class LocationAddress {
   final String? placeName;
 
   const LocationAddress({
-    this.city,
+    this.street,
+    this.streetNumber,
     this.subLocality,
+    this.district,
+    this.city,
     this.province,
     this.country,
     this.formattedAddress,
@@ -71,12 +83,55 @@ class LocationAddress {
     return country ?? '';
   }
 
+  /// Merangkai hanya komponen administratif ringkas yang tersedia.
+  String get speechAddress {
+    final parts = <String>[];
+    final seen = <String>{};
+
+    void addPart(String? value, {bool districtName = false}) {
+      final normalized = _nonEmpty(value);
+      if (normalized == null) return;
+
+      final key = normalized
+          .toLowerCase()
+          .replaceFirst(RegExp(r'^kecamatan\s+'), '')
+          .replaceAll(RegExp(r'\s+'), ' ');
+      if (!seen.add(key)) return;
+
+      if (districtName && !normalized.toLowerCase().startsWith('kecamatan ')) {
+        parts.add('Kecamatan $normalized');
+      } else {
+        parts.add(normalized);
+      }
+    }
+
+    addPart(subLocality);
+    addPart(district, districtName: true);
+    addPart(city);
+    addPart(province);
+    addPart(country);
+
+    return parts.join(', ');
+  }
+
+  /// A place name is spoken as an approximate landmark when no street is known.
+  bool get usesPlaceNameAsLandmark =>
+      _nonEmpty(placeName) != null && _nonEmpty(street) == null;
+
+  String? _nonEmpty(String? value) {
+    final normalized = value?.trim();
+    return normalized == null || normalized.isEmpty ? null : normalized;
+  }
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     return other is LocationAddress &&
-        other.city == city &&
+        other.street == street &&
+        other.streetNumber == streetNumber &&
         other.subLocality == subLocality &&
+        other.district == district &&
+        other.city == city &&
         other.province == province &&
         other.country == country &&
         other.formattedAddress == formattedAddress &&
@@ -85,8 +140,11 @@ class LocationAddress {
 
   @override
   int get hashCode => Object.hash(
-    city,
+    street,
+    streetNumber,
     subLocality,
+    district,
+    city,
     province,
     country,
     formattedAddress,

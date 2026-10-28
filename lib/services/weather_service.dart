@@ -162,6 +162,10 @@ class OpenWeatherMapClient implements WeatherClient {
       return WeatherResult.unconfigured();
     }
 
+    debugPrint(
+      '[DIAGNOSTIC][WEATHER_LOCATION] '
+      'latitude=$latitude longitude=$longitude',
+    );
     final uri = config.buildUri(
       latitude: latitude,
       longitude: longitude,
@@ -271,6 +275,10 @@ class OpenWeatherMapClient implements WeatherClient {
     final rawCityName = (data['name'] as String?)?.trim();
     final cityName =
         (rawCityName != null && rawCityName.isNotEmpty) ? rawCityName : null;
+    debugPrint(
+      '[DIAGNOSTIC][WEATHER_API_RESPONSE] '
+      'locationField="name" locationName="${cityName ?? ''}"',
+    );
 
     final coord = data['coord'] as Map<String, dynamic>?;
     final lat = (coord?['lat'] as num?)?.toDouble();

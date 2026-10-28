@@ -58,6 +58,9 @@ class VoiceController extends ChangeNotifier {
   bool _cancelRequested = false;
   bool _disposed = false;
   TtsPlaybackStatus? _lastPlaybackStatus;
+  int _diagnosticDoneCount = 0;
+  int _diagnosticLocationHandlerCount = 0;
+  int _diagnosticSpeakResponseCount = 0;
 
   VoiceController({
     DateTimeService? dateTimeService,
@@ -230,6 +233,15 @@ class VoiceController extends ChangeNotifier {
   }
 
   void _handleEngineStatus(int sessionId, SpeechEngineStatus status) {
+    if (status == SpeechEngineStatus.done) {
+      _diagnosticDoneCount++;
+      debugPrint(
+        '[DIAGNOSTIC][STT_DONE] controllerCount=$_diagnosticDoneCount '
+        'sessionId=$sessionId recognizedText="$_recognizedText" '
+        'finalResultHandled=$_finalResultHandled',
+      );
+    }
+
     if (!_isCurrentSession(sessionId) || _cancelRequested) return;
 
     if (status == SpeechEngineStatus.listening) {
@@ -311,6 +323,11 @@ class VoiceController extends ChangeNotifier {
   }
 
   Future<void> _handleLocationCommand(int sessionId) async {
+    _diagnosticLocationHandlerCount++;
+    debugPrint(
+      '[DIAGNOSTIC][LOCATION_HANDLER] called '
+      'count=$_diagnosticLocationHandlerCount sessionId=$sessionId',
+    );
     if (!_isCurrentSession(sessionId) || _disposed) return;
 
     _setState(VoiceInteractionState.processing);
@@ -337,7 +354,23 @@ class VoiceController extends ChangeNotifier {
       }
 
       final address = geocodingResult.address!;
-      final locationName = address.displayName;
+      debugPrint(
+        '[DIAGNOSTIC][LOCATION_DATA] sessionId=$sessionId\n'
+        'formattedAddress="${address.formattedAddress}"\n'
+        'street="${address.street}"\n'
+        'streetNumber="${address.streetNumber}"\n'
+        'subLocality="${address.subLocality}"\n'
+        'district="${address.district}"\n'
+        'city="${address.city}"\n'
+        'province="${address.province}"\n'
+        'country="${address.country}"\n'
+        'placeName="${address.placeName}"',
+      );
+      final locationName = address.speechAddress;
+      debugPrint(
+        '[DIAGNOSTIC][LOCATION_SPEECH_ADDRESS] '
+        'sessionId=$sessionId text="$locationName"',
+      );
       if (locationName.isEmpty) {
         await _speakResponse(
           sessionId,
@@ -346,12 +379,7 @@ class VoiceController extends ChangeNotifier {
         return;
       }
 
-      final responseText =
-          address.placeName != null && address.placeName!.trim().isNotEmpty
-          ? 'Lokasi Anda berada di sekitar $locationName.'
-          : 'Lokasi Anda berada di $locationName.';
-
-      await _speakResponse(sessionId, responseText);
+      await _speakResponse(sessionId, 'Anda berada di $locationName.');
     } catch (error, stackTrace) {
       debugPrint('VoiceController location error: $error\n$stackTrace');
       if (_isCurrentSession(sessionId) && !_disposed) {
@@ -378,6 +406,10 @@ class VoiceController extends ChangeNotifier {
       }
 
       final coords = locationResult.location!;
+      debugPrint(
+        '[DIAGNOSTIC][WEATHER_LOCATION] sessionId=$sessionId '
+        'latitude=${coords.latitude} longitude=${coords.longitude}',
+      );
       final weatherResult = await _weatherService.getCurrentWeather(
         latitude: coords.latitude,
         longitude: coords.longitude,
@@ -389,8 +421,48 @@ class VoiceController extends ChangeNotifier {
         return;
       }
 
+      String? speechLocation;
+      try {
+        final geocodingResult = await _geocodingService.reverseGeocode(
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        );
+        if (!_isCurrentSession(sessionId) || _disposed) return;
+
+        if (geocodingResult.isSuccess && geocodingResult.address != null) {
+          final formattedLocation = geocodingResult.address!.speechAddress
+              .trim();
+          if (formattedLocation.isNotEmpty) {
+            speechLocation = formattedLocation;
+          }
+        }
+      } catch (error, stackTrace) {
+        debugPrint(
+          'VoiceController weather reverse geocoding error: '
+          '$error\n$stackTrace',
+        );
+      }
+
+      if (!_isCurrentSession(sessionId) || _disposed) return;
+      final weatherData = weatherResult.data!;
+      debugPrint(
+        '[DIAGNOSTIC][WEATHER_LOCATION] sessionId=$sessionId '
+        'generatorCityName="${weatherData.cityName}" '
+        'responseLatitude=${weatherData.latitude} '
+        'responseLongitude=${weatherData.longitude}',
+      );
+      debugPrint(
+        '[DIAGNOSTIC][WEATHER_SPEECH_LOCATION] '
+        'sessionId=$sessionId location="${speechLocation ?? ''}" '
+        'source=reverseGeocoding',
+      );
       final responseText = _weatherResponseGenerator.generate(
-        weatherResult.data!,
+        weatherData,
+        locationName: speechLocation,
+      );
+      debugPrint(
+        '[DIAGNOSTIC][WEATHER_RESPONSE_TEXT] '
+        'sessionId=$sessionId text="$responseText"',
       );
       await _speakResponse(sessionId, responseText);
     } catch (error, stackTrace) {
@@ -415,6 +487,12 @@ class VoiceController extends ChangeNotifier {
       if (!_isCurrentSession(sessionId) || _disposed) return;
 
       _setState(VoiceInteractionState.speaking);
+      _diagnosticSpeakResponseCount++;
+      debugPrint(
+        '[DIAGNOSTIC][SPEAK_RESPONSE] '
+        'count=$_diagnosticSpeakResponseCount sessionId=$sessionId '
+        'text="$response"',
+      );
       final playbackResult = await _ttsService.speak(response);
       if (!_isCurrentSession(sessionId) || _disposed) return;
 

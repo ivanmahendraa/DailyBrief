@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 abstract interface class CrashErrorReporter {
   Future<void> setCollectionEnabled(bool enabled);
 
+  Future<void> recordFlutterFatalError(FlutterErrorDetails details);
+
   Future<void> recordError(
     Object error,
     StackTrace stackTrace, {
@@ -22,6 +24,10 @@ class FirebaseCrashErrorReporter implements CrashErrorReporter {
   @override
   Future<void> setCollectionEnabled(bool enabled) =>
       _crashlytics.setCrashlyticsCollectionEnabled(enabled);
+
+  @override
+  Future<void> recordFlutterFatalError(FlutterErrorDetails details) =>
+      _crashlytics.recordFlutterFatalError(details);
 
   @override
   Future<void> recordError(
@@ -41,41 +47,18 @@ class CrashReportingService {
   final void Function(FlutterErrorDetails details) _presentFlutterError;
 
   Future<void> initialize({required bool collectionEnabled}) async {
-    try {
-      await reporter.setCollectionEnabled(collectionEnabled);
-    } catch (error) {
-      debugPrint('Crashlytics configuration failed (${error.runtimeType}).');
-    }
+    await reporter.setCollectionEnabled(collectionEnabled);
 
     FlutterError.onError = (details) {
       _presentFlutterError(details);
-      unawaited(
-        _recordSanitizedError(
-          StateError('Unhandled Flutter framework error'),
-          details.stack ?? StackTrace.current,
-        ),
-      );
+      unawaited(reporter.recordFlutterFatalError(details));
     };
 
     PlatformDispatcher.instance.onError = (error, stackTrace) {
       unawaited(
-        _recordSanitizedError(
-          StateError('Unhandled asynchronous application error'),
-          stackTrace,
-        ),
+        reporter.recordError(error, stackTrace, fatal: true),
       );
       return true;
     };
-  }
-
-  Future<void> _recordSanitizedError(
-    Object safeError,
-    StackTrace stackTrace,
-  ) async {
-    try {
-      await reporter.recordError(safeError, stackTrace, fatal: true);
-    } catch (error) {
-      debugPrint('Crashlytics report failed (${error.runtimeType}).');
-    }
   }
 }

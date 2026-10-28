@@ -12,6 +12,15 @@ class _FakeCrashErrorReporter implements CrashErrorReporter {
   }
 
   @override
+  Future<void> recordFlutterFatalError(FlutterErrorDetails details) async {
+    errors.add((
+      error: details.exception,
+      stackTrace: details.stack ?? StackTrace.empty,
+      fatal: true,
+    ));
+  }
+
+  @override
   Future<void> recordError(
     Object error,
     StackTrace stackTrace, {
@@ -38,35 +47,39 @@ void main() {
       PlatformDispatcher.instance.onError = previousPlatformErrorHandler;
     });
 
-    test('configures collection and sanitizes framework errors', () async {
-      final reporter = _FakeCrashErrorReporter();
-      final presentedErrors = <FlutterErrorDetails>[];
-      await CrashReportingService(
-        reporter: reporter,
-        presentFlutterError: presentedErrors.add,
-      ).initialize(collectionEnabled: false);
+    test(
+      'records framework exceptions as fatal errors without losing details',
+      () async {
+        final reporter = _FakeCrashErrorReporter();
+        final presentedErrors = <FlutterErrorDetails>[];
+        await CrashReportingService(
+          reporter: reporter,
+          presentFlutterError: presentedErrors.add,
+        ).initialize(collectionEnabled: false);
 
-      final stackTrace = StackTrace.current;
-      FlutterError.onError!(
-        FlutterErrorDetails(
-          exception: StateError('private speech transcript'),
-          stack: stackTrace,
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
+        final stackTrace = StackTrace.current;
+        FlutterError.onError!(
+          FlutterErrorDetails(
+            exception: StateError('private speech transcript'),
+            stack: stackTrace,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
 
-      expect(reporter.collectionEnabled, isFalse);
-      expect(presentedErrors, hasLength(1));
-      expect(reporter.errors, hasLength(1));
-      expect(
-        reporter.errors.single.error.toString(),
-        isNot(contains('private')),
-      );
-      expect(reporter.errors.single.stackTrace, stackTrace);
-      expect(reporter.errors.single.fatal, isTrue);
-    });
+        expect(reporter.collectionEnabled, isFalse);
+        expect(presentedErrors, hasLength(1));
+        expect(reporter.errors, hasLength(1));
+        expect(reporter.errors.single.error, isA<StateError>());
+        expect(
+          reporter.errors.single.error.toString(),
+          contains('private speech transcript'),
+        );
+        expect(reporter.errors.single.stackTrace, stackTrace);
+        expect(reporter.errors.single.fatal, isTrue);
+      },
+    );
 
-    test('records sanitized uncaught asynchronous errors as fatal', () async {
+    test('records original uncaught asynchronous errors as fatal', () async {
       final reporter = _FakeCrashErrorReporter();
       await CrashReportingService(
         reporter: reporter,
@@ -85,7 +98,7 @@ void main() {
       expect(reporter.errors, hasLength(1));
       expect(
         reporter.errors.single.error.toString(),
-        isNot(contains('private')),
+        contains('private location coordinates'),
       );
       expect(reporter.errors.single.stackTrace, stackTrace);
       expect(reporter.errors.single.fatal, isTrue);

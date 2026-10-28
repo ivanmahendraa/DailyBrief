@@ -8,6 +8,7 @@ import 'package:daily_brief/features/voice/voice_controller.dart';
 import 'package:daily_brief/features/voice/weather_response_generator.dart';
 import 'package:daily_brief/services/command_history_service.dart';
 import 'package:daily_brief/services/date_time_service.dart';
+import 'package:daily_brief/services/geocoding_service.dart';
 import 'package:daily_brief/services/location_service.dart';
 import 'package:daily_brief/services/speech_to_text_service.dart';
 import 'package:daily_brief/services/tts_service.dart';
@@ -234,7 +235,7 @@ class _IntegrationWeatherClient implements WeatherClient {
     const WeatherData(
       description: 'cerah berawan',
       temperature: 28.4,
-      cityName: 'Batam',
+      cityName: 'Kangboi',
       latitude: 1.1301,
       longitude: 104.0529,
     ),
@@ -264,6 +265,16 @@ class _IntegrationWeatherClient implements WeatherClient {
   }
 }
 
+class _IntegrationGeocodingService extends GeocodingService {
+  _IntegrationGeocodingService() : super();
+
+  @override
+  Future<GeocodingResult> reverseGeocode({
+    required double latitude,
+    required double longitude,
+  }) async => GeocodingResult.success(const LocationAddress(city: 'Batam'));
+}
+
 class _WeatherTestFixture {
   final speechClient = _IntegrationSpeechClient();
   final ttsService = _IntegrationTtsService();
@@ -271,6 +282,8 @@ class _WeatherTestFixture {
   final weatherClient = _IntegrationWeatherClient();
 
   late final LocationService locationService = LocationService(locationClient);
+  late final GeocodingService geocodingService =
+      _IntegrationGeocodingService();
   late final WeatherService weatherService = WeatherService(weatherClient);
   late final SpeechToTextService speechService = SpeechToTextService(
     client: speechClient,
@@ -284,6 +297,7 @@ class _WeatherTestFixture {
     speechToTextService: speechService,
     ttsService: ttsService,
     locationService: locationService,
+    geocodingService: geocodingService,
     weatherService: weatherService,
     commandHistoryWriter: _NoOpCommandHistoryWriter(),
     weatherResponseGenerator: const WeatherResponseGenerator(),
@@ -404,7 +418,7 @@ void main() {
         );
       });
 
-      test('4. Data cuaca tanpa nama kota (cityName == null) menghasilkan respons valid', () async {
+      test('4. Nama lokasi hasil geocoding digunakan meski cityName cuaca null', () async {
         fixture.weatherClient.resultToReturn = WeatherResult.success(
           const WeatherData(
             description: 'hujan ringan',
@@ -418,7 +432,7 @@ void main() {
 
         expect(
           fixture.ttsService.lastSpokenResponse,
-          'Cuaca saat ini hujan ringan dengan suhu 26 derajat Celsius.',
+          'Cuaca di Batam saat ini hujan ringan dengan suhu 26 derajat Celsius.',
         );
         expect(fixture.controller.state, VoiceInteractionState.idle);
       });

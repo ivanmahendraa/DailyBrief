@@ -187,7 +187,6 @@ class _FakeGeocodingService extends GeocodingService {
       city: 'Kota Batam',
       province: 'Kepulauan Riau',
       country: 'Indonesia',
-      formattedAddress: 'Jl. Engku Putri, Batam',
     ),
   );
   int callCount = 0;
@@ -755,7 +754,7 @@ void main() {
         expect(harness.ttsService.responseCallCount, 1);
         expect(
           harness.ttsService.spokenText,
-          'Lokasi Anda berada di sekitar Mega Mall Batam, Kota Batam.',
+          'Anda berada di Kota Batam, Kepulauan Riau, Indonesia.',
         );
         expect(harness.controller.state, VoiceInteractionState.idle);
         expect(harness.controller.hasActiveSession, isFalse);
@@ -778,7 +777,7 @@ void main() {
 
         expect(
           harness.ttsService.spokenText,
-          'Lokasi Anda berada di Batam, Kepulauan Riau.',
+          'Anda berada di Batam, Kepulauan Riau.',
         );
         harness.controller.dispose();
       });
@@ -975,9 +974,27 @@ void main() {
     group('weather command (TASK-54)', () {
       test('1. weather command succeeds from parser through VoiceController, gets location & weather, speaks formatted sentence, and transitions processing -> speaking -> idle', () async {
         final fakeLocation = _FakeLocationService();
-        final fakeWeather = _FakeWeatherService();
+        final fakeGeocoding = _FakeGeocodingService()
+          ..resultToReturn = GeocodingResult.success(
+            const LocationAddress(
+              subLocality: 'Tembesi',
+              district: 'Sagulung',
+              city: 'Kota Batam',
+              province: 'Kepulauan Riau',
+              country: 'Indonesia',
+            ),
+          );
+        final fakeWeather = _FakeWeatherService()
+          ..resultToReturn = WeatherResult.success(
+            const WeatherData(
+              description: 'cerah berawan',
+              temperature: 28.4,
+              cityName: 'Kangboi',
+            ),
+          );
         final harness = _Harness(
           locationService: fakeLocation,
+          geocodingService: fakeGeocoding,
           weatherService: fakeWeather,
         );
 
@@ -990,6 +1007,9 @@ void main() {
         await harness.emitFinalAndComplete('cuaca');
 
         expect(fakeLocation.callCount, 1);
+        expect(fakeGeocoding.callCount, 1);
+        expect(fakeGeocoding.lastLatitude, 1.1301);
+        expect(fakeGeocoding.lastLongitude, 104.0529);
         expect(fakeWeather.callCount, 1);
         expect(fakeWeather.lastLatitude, 1.1301);
         expect(fakeWeather.lastLongitude, 104.0529);
@@ -997,8 +1017,9 @@ void main() {
         expect(harness.ttsService.responseCallCount, 1);
         expect(
           harness.ttsService.spokenText,
-          'Cuaca di Batam saat ini cerah berawan dengan suhu 28 derajat Celsius.',
+          'Cuaca di Tembesi, Kecamatan Sagulung, Kota Batam, Kepulauan Riau, Indonesia saat ini cerah berawan dengan suhu 28 derajat Celsius.',
         );
+        expect(harness.ttsService.spokenText, isNot(contains('Kangboi')));
         expect(
           observedStates,
           containsAllInOrder([
@@ -1012,6 +1033,33 @@ void main() {
         harness.controller.dispose();
       });
 
+      test('weather command omits location instead of using OpenWeather city when reverse geocoding is unavailable', () async {
+        final fakeWeather = _FakeWeatherService()
+          ..resultToReturn = WeatherResult.success(
+            const WeatherData(
+              description: 'awan mendung',
+              temperature: 25.0,
+              cityName: 'Kangboi',
+            ),
+          );
+        final fakeGeocoding = _FakeGeocodingService()
+          ..resultToReturn = GeocodingResult.notFound();
+        final harness = _Harness(
+          weatherService: fakeWeather,
+          geocodingService: fakeGeocoding,
+        );
+
+        await harness.startAndConfirmListening();
+        await harness.emitFinalAndComplete('cuaca');
+
+        expect(
+          harness.ttsService.spokenText,
+          'Cuaca saat ini awan mendung dengan suhu 25 derajat Celsius.',
+        );
+        expect(harness.ttsService.spokenText, isNot(contains('Kangboi')));
+        harness.controller.dispose();
+      });
+
       test('2. weather command works with other weather phrasing like "bagaimana cuaca hari ini" and "ramalan cuaca"', () async {
         final fakeWeather = _FakeWeatherService();
         final harness = _Harness(weatherService: fakeWeather);
@@ -1022,7 +1070,7 @@ void main() {
         expect(fakeWeather.callCount, 1);
         expect(
           harness.ttsService.spokenText,
-          'Cuaca di Batam saat ini cerah berawan dengan suhu 28 derajat Celsius.',
+          'Cuaca di Kota Batam, Kepulauan Riau, Indonesia saat ini cerah berawan dengan suhu 28 derajat Celsius.',
         );
 
         await harness.startAndConfirmListening();
@@ -1376,7 +1424,7 @@ void main() {
         await harness.emitFinalAndComplete('lokasi');
         expect(
           harness.ttsService.spokenText,
-          'Lokasi Anda berada di sekitar Mega Mall Batam, Kota Batam.',
+          'Anda berada di Kota Batam, Kepulauan Riau, Indonesia.',
         );
 
         // 5. unknown

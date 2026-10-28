@@ -177,8 +177,11 @@ void main() {
           receivedLongitude = longitude;
           return const [
             Placemark(
+              street: 'Jalan Lama',
+              thoroughfare: 'Jalan Engku Putri',
+              subThoroughfare: '12',
               locality: 'Batam',
-              subLocality: 'Batam Kota',
+              subLocality: 'Teluk Tering',
               administrativeArea: 'Kepulauan Riau',
               country: 'Indonesia',
             ),
@@ -194,11 +197,17 @@ void main() {
       expect(receivedLatitude, 1.1301);
       expect(receivedLongitude, 104.0529);
       expect(result.isSuccess, isTrue);
+      expect(result.address?.street, 'Jalan Engku Putri');
+      expect(result.address?.streetNumber, '12');
       expect(result.address?.city, 'Batam');
-      expect(result.address?.subLocality, 'Batam Kota');
+      expect(result.address?.subLocality, 'Teluk Tering');
       expect(result.address?.province, 'Kepulauan Riau');
       expect(result.address?.country, 'Indonesia');
       expect(result.address?.displayName, 'Batam, Kepulauan Riau');
+      expect(
+        result.address?.speechAddress,
+        'Teluk Tering, Batam, Kepulauan Riau, Indonesia',
+      );
     });
 
     test(
@@ -283,14 +292,29 @@ void main() {
             'formatted_address': 'Jl. Engku Putri, Batam Kota, Kota Batam, Kepulauan Riau 29432, Indonesia',
             'address_components': [
               {
+                'long_name': 'Jalan Engku Putri',
+                'short_name': 'Jl. Engku Putri',
+                'types': ['route'],
+              },
+              {
+                'long_name': '12',
+                'short_name': '12',
+                'types': ['street_number'],
+              },
+              {
                 'long_name': 'Mega Mall Batam',
                 'short_name': 'Mega Mall',
                 'types': ['point_of_interest', 'establishment'],
               },
               {
-                'long_name': 'Batam Kota',
-                'short_name': 'Batam Kota',
+                'long_name': 'Teluk Tering',
+                'short_name': 'Teluk Tering',
                 'types': ['sublocality', 'political'],
+              },
+              {
+                'long_name': 'Not Assumed as District',
+                'short_name': 'Not Assumed',
+                'types': ['administrative_area_level_3', 'political'],
               },
               {
                 'long_name': 'Kota Batam',
@@ -318,13 +342,20 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       expect(result.address, isNotNull);
+      expect(result.address!.street, 'Jalan Engku Putri');
+      expect(result.address!.streetNumber, '12');
       expect(result.address!.placeName, 'Mega Mall Batam');
       expect(result.address!.city, 'Kota Batam');
-      expect(result.address!.subLocality, 'Batam Kota');
+      expect(result.address!.subLocality, 'Teluk Tering');
+      expect(result.address!.district, isNull);
       expect(result.address!.province, 'Kepulauan Riau');
       expect(result.address!.country, 'Indonesia');
       expect(result.address!.formattedAddress, contains('Jl. Engku Putri'));
       expect(result.address!.displayName, 'Mega Mall Batam, Kota Batam');
+      expect(
+        result.address!.speechAddress,
+        'Teluk Tering, Kota Batam, Kepulauan Riau, Indonesia',
+      );
     });
 
     test('parseGoogleGeocodingResponse memprioritaskan locality dibanding adminAreaLevel2', () {
@@ -412,6 +443,119 @@ void main() {
   });
 
   group('LocationAddress Model Tests', () {
+    test(
+      'speechAddress hanya menggabungkan komponen administratif sesuai urutan',
+      () {
+        const address = LocationAddress(
+          street: 'Jalan Engku Putri',
+          streetNumber: '12',
+          subLocality: 'Teluk Tering',
+          district: 'Batam Kota',
+          city: 'Kota Batam',
+          province: 'Kepulauan Riau',
+          country: 'Indonesia',
+        );
+
+        expect(
+          address.speechAddress,
+          'Teluk Tering, Kecamatan Batam Kota, Kota Batam, Kepulauan Riau, Indonesia',
+        );
+      },
+    );
+
+    test(
+      'speechAddress mengabaikan formattedAddress dan field alamat terperinci',
+      () {
+        const address = LocationAddress(
+          street: '22C4+R39',
+          streetNumber: '22C4+R39',
+          subLocality: 'Tembesi',
+          district: 'Sagulung',
+          city: 'Kota Batam',
+          province: 'Kepulauan Riau',
+          country: 'Indonesia',
+          formattedAddress: '22C4+R39, Tembesi, Kec. Sagulung, Kota Batam, Kepulauan Riau 29472, Indonesia',
+        );
+
+        expect(
+          address.speechAddress,
+          'Tembesi, Kecamatan Sagulung, Kota Batam, Kepulauan Riau, Indonesia',
+        );
+      },
+    );
+
+    test(
+      'speechAddress melewati komponen kosong dan menghapus nilai duplikat',
+      () {
+        const address = LocationAddress(
+          street: 'Jalan Engku Putri',
+          streetNumber: '  ',
+          subLocality: '',
+          district: 'Batam Kota',
+          city: 'Kota Batam',
+          province: 'Kota Batam',
+          country: null,
+        );
+
+        expect(address.speechAddress, 'Kecamatan Batam Kota, Kota Batam');
+        expect(address.speechAddress, isNot(contains(',, ')));
+      },
+    );
+
+    test(
+      'speechAddress menyertakan kota, provinsi, dan negara yang tersedia',
+      () {
+        const address = LocationAddress(
+          city: 'Kota Batam',
+          province: 'Kepulauan Riau',
+          country: 'Indonesia',
+        );
+
+        expect(address.speechAddress, 'Kota Batam, Kepulauan Riau, Indonesia');
+      },
+    );
+
+    test('speechAddress mengabaikan jalan dan nomor rumah', () {
+      const address = LocationAddress(
+        street: 'Jalan Engku Putri No. 12',
+        streetNumber: '12',
+        city: 'Batam',
+      );
+
+      expect(address.speechAddress, 'Batam');
+    });
+
+    test('speechAddress kosong tanpa komponen administratif yang tersedia', () {
+      expect(const LocationAddress().speechAddress, isEmpty);
+      expect(
+        const LocationAddress(formattedAddress: 'Jalan Sudirman No. 1, Batam')
+            .speechAddress,
+        isEmpty,
+      );
+      expect(
+        const LocationAddress(placeName: 'Mega Mall Batam').speechAddress,
+        isEmpty,
+      );
+    });
+
+    test(
+      'speechAddress does not repeat district if it already has its label',
+      () {
+        const address = LocationAddress(
+          subLocality: 'Tembesi',
+          district: 'Kecamatan Sagulung',
+          city: 'Kota Batam',
+          province: 'Kepulauan Riau',
+          country: 'Indonesia',
+        );
+
+        expect(
+          address.speechAddress,
+          'Tembesi, Kecamatan Sagulung, Kota Batam, Kepulauan Riau, Indonesia',
+        );
+      },
+    );
+
     test(
       'displayName mengembalikan kombinasi yang tepat sesuai ketersediaan data',
       () {

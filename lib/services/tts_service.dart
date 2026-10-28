@@ -140,6 +140,7 @@ class TtsService {
   TtsState _state = TtsState.uninitialized;
   String? _lastErrorMessage;
   Completer<TtsPlaybackResult>? _speakCompleter;
+  int _diagnosticSpeakCount = 0;
 
   String _currentLanguage = defaultLanguage;
   double _currentSpeechRate = defaultSpeechRate;
@@ -318,6 +319,12 @@ class TtsService {
   /// Mengembalikan [TtsPlaybackResult] yang mengindikasikan status sukses, dibatalkan,
   /// atau gagal beserta rincian pesannya.
   Future<TtsPlaybackResult> speak(String text) async {
+    _diagnosticSpeakCount++;
+    debugPrint(
+      '[DIAGNOSTIC][TTS_SPEAK] count=$_diagnosticSpeakCount '
+      'state=$_state text="$text"',
+    );
+
     if (text.trim().isEmpty) {
       return TtsPlaybackResult.failure('Teks yang akan dibacakan tidak boleh kosong.');
     }

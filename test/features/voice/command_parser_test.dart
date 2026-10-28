@@ -43,6 +43,7 @@ void main() {
           'hari',
           'hari ini',
           'hari apa',
+          'hari ini hari apa',
           'sekarang hari apa',
         ],
         VoiceCommand.date: [
@@ -50,12 +51,17 @@ void main() {
           'tanggal berapa',
           'tanggal hari ini',
           'tanggal hari ini berapa',
+          'tanggal berapa hari ini',
+          'tanggal berapa sekarang',
         ],
         VoiceCommand.time: [
           'jam',
           'jam berapa',
           'waktu',
           'waktu sekarang',
+          'jam berapa sekarang',
+          'sekarang jam berapa',
+          'sekarang pukul berapa',
           'pukul',
           'pukul berapa',
           'tolong beri tahu waktu sekarang',
@@ -65,6 +71,8 @@ void main() {
           'ramalan cuaca',
           'prakiraan cuaca',
           'bagaimana cuaca hari ini',
+          'bagaimana cuaca',
+          'cuaca hari ini',
           'bagaimana prakiraan cuaca hari ini',
           'tolong cek cuaca',
         ],
@@ -76,6 +84,7 @@ void main() {
           'saya dimana',
           'saya berada di mana',
           'saya berada dimana',
+          'saya sedang berada di mana',
           'di mana saya',
           'dimana saya',
           'di mana lokasi saya',
@@ -107,6 +116,10 @@ void main() {
       expect(parser.parse('seharian'), VoiceCommand.unknown);
       expect(parser.parse('cuacanya'), VoiceCommand.unknown);
       expect(parser.parse('lokasinya'), VoiceCommand.unknown);
+      expect(parser.parse('cuaca besok'), VoiceCommand.unknown);
+      expect(parser.parse('bagaimana cuaca besok'), VoiceCommand.unknown);
+      expect(parser.parse('apakah besok akan hujan'), VoiceCommand.unknown);
+      expect(parser.parse('berapa suhu besok'), VoiceCommand.unknown);
     });
 
     test('returns unknown when multiple intents are spoken', () {

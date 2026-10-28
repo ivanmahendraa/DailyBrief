@@ -181,7 +181,7 @@ void main() {
       final jsonMap = createValidWeatherJson(
         description: 'cerah berawan',
         temp: 30.4,
-        name: 'Kota Batam',
+        name: 'Kangboi',
       );
       fakeHttpClient.responseBody = jsonEncode(jsonMap);
 
@@ -199,7 +199,7 @@ void main() {
       expect(result.data, isNotNull);
       expect(result.data!.description, equals('cerah berawan'));
       expect(result.data!.temperature, equals(30.4));
-      expect(result.data!.cityName, equals('Kota Batam'));
+      expect(result.data!.cityName, equals('Kangboi'));
     });
 
     test('2. Parsing temperatur berbagai nilai (desimal, pembulatan, dan minus)', () async {

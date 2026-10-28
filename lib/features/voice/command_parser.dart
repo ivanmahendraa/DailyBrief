@@ -8,6 +8,7 @@ class CommandParser {
     'hari',
     'hari ini',
     'hari apa',
+    'hari ini hari apa',
     'sekarang hari apa',
   };
 
@@ -16,6 +17,8 @@ class CommandParser {
     'tanggal berapa',
     'tanggal hari ini',
     'tanggal hari ini berapa',
+    'tanggal berapa hari ini',
+    'tanggal berapa sekarang',
   };
 
   static const Set<String> _timeUtterances = {
@@ -23,6 +26,9 @@ class CommandParser {
     'jam berapa',
     'waktu',
     'waktu sekarang',
+    'jam berapa sekarang',
+    'sekarang jam berapa',
+    'sekarang pukul berapa',
     'pukul',
     'pukul berapa',
     'tolong beri tahu waktu sekarang',
@@ -33,6 +39,8 @@ class CommandParser {
     'ramalan cuaca',
     'prakiraan cuaca',
     'bagaimana cuaca hari ini',
+    'bagaimana cuaca',
+    'cuaca hari ini',
     'bagaimana prakiraan cuaca hari ini',
     'tolong cek cuaca',
   };
@@ -45,6 +53,7 @@ class CommandParser {
     'saya dimana',
     'saya berada di mana',
     'saya berada dimana',
+    'saya sedang berada di mana',
     'di mana saya',
     'dimana saya',
     'di mana lokasi saya',

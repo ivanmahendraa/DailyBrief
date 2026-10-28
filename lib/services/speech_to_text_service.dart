@@ -167,6 +167,7 @@ class SpeechToTextService {
   bool _startInProgress = false;
   bool _sessionActive = false;
   bool _cancelRequested = false;
+  int _diagnosticDoneCount = 0;
 
   SpeechToTextService({SpeechToTextClient? client})
     : _client = client ?? DefaultSpeechToTextClient();
@@ -357,6 +358,14 @@ class SpeechToTextService {
   }
 
   void _handleEngineStatus(String status) {
+    if (status == stt.SpeechToText.doneStatus) {
+      _diagnosticDoneCount++;
+      debugPrint(
+        '[DIAGNOSTIC][STT_DONE] count=$_diagnosticDoneCount '
+        'sessionActive=$_sessionActive state=$_state',
+      );
+    }
+
     if (!_sessionActive) return;
 
     final engineStatus = switch (status) {

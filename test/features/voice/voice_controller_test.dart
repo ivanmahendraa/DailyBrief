@@ -400,6 +400,30 @@ void main() {
     });
 
     test(
+      'completes repeated sessions without overlapping microphone starts',
+      () async {
+        final harness = _Harness();
+        for (var session = 1; session <= 3; session++) {
+          await harness.controller.startListening();
+          expect(harness.speechClient.listenCallCount, session);
+          expect(harness.controller.state, VoiceInteractionState.confirming);
+
+          harness.speechClient.emitStatus('listening');
+          expect(harness.controller.state, VoiceInteractionState.listening);
+
+          await harness.emitFinalAndComplete('hari');
+          await Future<void>.delayed(Duration.zero);
+
+          expect(harness.controller.state, VoiceInteractionState.idle);
+          expect(harness.controller.hasActiveSession, isFalse);
+          expect(harness.ttsService.confirmationCallCount, session);
+        }
+
+        harness.controller.dispose();
+      },
+    );
+
+    test(
       'ignores duplicate final results and speaks one honest fallback',
       () async {
         final harness = _Harness();

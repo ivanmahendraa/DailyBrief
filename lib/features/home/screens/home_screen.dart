@@ -53,6 +53,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _playWelcomeGreeting() async {
+    if (MediaQuery.of(context).accessibleNavigation) return;
+
     try {
       final result = await (widget.ttsService ?? TtsService()).speak(
         AppStrings.welcomeGreeting,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show SemanticsAction;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -267,6 +268,49 @@ void main() {
       expect(greetingTtsService.spokenTexts, [AppStrings.welcomeGreeting]);
       expect(controller.startActionCount, 0);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('sapaan otomatis tidak bertumpuk dengan pembaca layar', (
+      WidgetTester tester,
+    ) async {
+      greetingTtsService.spokenTexts.clear();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: MediaQuery(
+            data: const MediaQueryData(accessibleNavigation: true),
+            child: HomeScreen(
+              voiceController: _FakeVoiceController(),
+              ttsService: greetingTtsService,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.bySemanticsLabel('Simbol Daily Horizon'), findsOneWidget);
+      expect(find.bySemanticsLabel('Area interaksi utama'), findsOneWidget);
+      expect(greetingTtsService.spokenTexts, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('area utama memiliki label, petunjuk, dan aksi sentuh semantik', (
+      WidgetTester tester,
+    ) async {
+      final semanticsHandle = tester.ensureSemantics();
+      try {
+        await tester.pumpWidget(buildTestableHomeScreen());
+        final touchArea = tester.getSemantics(
+          find.bySemanticsLabel('Area interaksi utama'),
+        );
+        final touchAreaData = touchArea.getSemanticsData();
+
+        expect(touchAreaData.label, 'Area interaksi utama');
+        expect(touchAreaData.hint, AppStrings.touchAreaSubtitle);
+        expect(touchAreaData.hasAction(SemanticsAction.tap), isTrue);
+      } finally {
+        semanticsHandle.dispose();
+      }
     });
 
     test(

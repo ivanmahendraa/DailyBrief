@@ -40,7 +40,7 @@ class _ThrowingTtsService extends TtsService {
 void main() {
   group('Splash dan sapaan Home', () {
     testWidgets(
-      'Splash tidak memutar TTS dan tetap terlihat sebelum Home menyapa',
+      'Splash menunggu inisialisasi lalu langsung membuka Home tanpa jeda tiruan',
       (WidgetTester tester) async {
         final initializer = _ControlledFakeInitializer();
         final ttsService = _RecordingTtsService();
@@ -64,16 +64,7 @@ void main() {
 
         initializer.completeSuccess();
         await tester.pump();
-        await tester.pump(
-          SplashScreen.minimumDisplayDuration - const Duration(milliseconds: 1),
-        );
-
-        expect(find.byType(SplashScreen), findsOneWidget);
-        expect(find.byType(HomeScreen), findsNothing);
-        expect(ttsService.spokenTexts, isEmpty);
-
-        await tester.pump(const Duration(milliseconds: 1));
-        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
         await tester.pumpAndSettle();
 
         expect(find.byType(HomeScreen), findsOneWidget);

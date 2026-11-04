@@ -11,10 +11,8 @@ import '../../voice/voice_controller.dart';
 ///
 /// Menampilkan identitas aplikasi, logo/ikon, tagline, indikator pemuatan,
 /// menjalankan inisialisasi layanan dasar, lalu melanjutkan ke Home Screen
-/// setelah tampilan pembuka terlihat setidaknya selama waktu minimum.
+/// segera setelah inisialisasi berhasil.
 class SplashScreen extends StatefulWidget {
-  static const Duration minimumDisplayDuration = Duration(milliseconds: 1500);
-
   final AppInitializer initializer;
   final TtsService? ttsService;
   final SpeechToTextService? speechToTextService;
@@ -40,12 +38,10 @@ class _SplashScreenState extends State<SplashScreen> {
   bool _isInitializing = false;
   String? _errorMessage;
   bool _isNavigating = false;
-  final Stopwatch _displayStopwatch = Stopwatch();
 
   @override
   void initState() {
     super.initState();
-    _displayStopwatch.start();
     _startInitialization();
   }
 
@@ -68,9 +64,6 @@ class _SplashScreenState extends State<SplashScreen> {
         return;
       }
       _notifyInitialized();
-      await _waitForMinimumDisplayDuration();
-      if (!mounted) return;
-
       if (widget.navigateToHome) _navigateToHome();
     } catch (error, stackTrace) {
       debugPrint('SplashScreen initialization flow error: $error\n$stackTrace');
@@ -82,14 +75,6 @@ class _SplashScreenState extends State<SplashScreen> {
     } finally {
       _isInitializing = false;
       if (mounted) setState(() {});
-    }
-  }
-
-  Future<void> _waitForMinimumDisplayDuration() async {
-    final remaining =
-        SplashScreen.minimumDisplayDuration - _displayStopwatch.elapsed;
-    if (remaining > Duration.zero) {
-      await Future<void>.delayed(remaining);
     }
   }
 

@@ -51,12 +51,23 @@ class CrashReportingService {
 
     FlutterError.onError = (details) {
       _presentFlutterError(details);
-      unawaited(reporter.recordFlutterFatalError(details));
+      unawaited(
+        reporter.recordFlutterFatalError(
+          FlutterErrorDetails(
+            exception: StateError('Flutter framework error'),
+            stack: details.stack,
+          ),
+        ),
+      );
     };
 
     PlatformDispatcher.instance.onError = (error, stackTrace) {
       unawaited(
-        reporter.recordError(error, stackTrace, fatal: true),
+        reporter.recordError(
+          StateError('Uncaught asynchronous application error'),
+          stackTrace,
+          fatal: true,
+        ),
       );
       return true;
     };

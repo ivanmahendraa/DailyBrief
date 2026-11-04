@@ -1,49 +1,161 @@
-# daily_brief
+# DailyBrief
 
-A new Flutter project.
+DailyBrief adalah aplikasi Flutter Android dan iOS untuk meminta informasi
+hari, tanggal, waktu, lokasi, dan cuaca melalui suara. Pengguna menyentuh area
+utama, mendengar konfirmasi, lalu menerima jawaban melalui text-to-speech (TTS).
 
-## Firebase and crash reporting
+## Fitur
 
-The Android, iOS, and Web app configurations are generated in
-`lib/firebase_options.dart` for the Firebase project `dailybrief-ivanmahendraa`.
-Regenerate them with:
+- Perintah suara berbahasa Indonesia untuk hari, tanggal, waktu, cuaca, dan
+  lokasi.
+- Area sentuh utama berlabel semantik dan umpan balik haptik.
+- Informasi cuaca OpenWeatherMap; nama lokasi berasal dari geocoder bawaan
+  platform Android/iOS.
+- Riwayat kategori perintah di Cloud Firestore untuk pengguna anonim. Aplikasi
+  tidak menyimpan audio, transkrip, jawaban, atau koordinat.
+- Firebase Crashlytics pada build release Android dan iOS. Firebase Analytics
+  tidak digunakan.
+- Sapaan Home otomatis dilewati saat perangkat melaporkan navigasi aksesibel
+  (misalnya TalkBack atau VoiceOver) agar suaranya tidak bertumpuk.
+
+## Prasyarat
+
+- Flutter SDK dan Dart yang memenuhi constraint pada `pubspec.yaml`.
+- Android Studio/Android SDK untuk menjalankan atau membangun Android.
+- macOS dengan Xcode untuk membangun atau menjalankan iOS. Build iOS tidak
+  dapat dilakukan dari Windows.
+- Perangkat/emulator untuk mencoba mikrofon, lokasi, dan text-to-speech.
+
+Proyek ini menggunakan Dart SDK `^3.13.3`; hasil verifikasi di bawah dijalankan
+dengan Flutter 3.47.7 dan Dart 3.13.5.
+
+Periksa instalasi Flutter dan perangkat yang dikenali:
 
 ```powershell
-dart pub global run flutterfire_cli:flutterfire configure --project=dailybrief-ivanmahendraa --platforms=android,ios,web
+flutter doctor
+flutter devices
 ```
 
-Cloud Firestore stores only recognized command categories and server timestamps.
-It does not store speech transcripts, audio, responses, or location coordinates.
-The Firestore access rules are in `firestore.rules`.
+## Menyiapkan proyek
 
-Reverse geocoding uses the device's native Android/iOS geocoder and does not
-require a Google Geocoding API key. Results depend on the platform geocoder and
-may require network access; the app uses the returned city/region only for the
-current spoken response and does not persist coordinates.
+Jalankan dari root repositori:
 
-Firebase Analytics is not integrated, and the app does not send product
-analytics events. If analytics is considered in the future, its purpose,
-collected fields, and user privacy impact must be reviewed before enabling it;
-speech transcripts, audio, precise location, and response text must not be
-logged as analytics data.
+```powershell
+flutter pub get
+```
 
-Crashlytics is configured for Android and iOS. Automatic crash collection is
-enabled in release builds and disabled in debug builds. Global Flutter and
-uncaught asynchronous errors are reported with generic exception messages and
-their stack traces; user utterances, location data, and error text are not added
-to crash reports. Review reports in the Firebase Console under
-**DevOps & Engagement > Crashlytics**.
+Konfigurasi Firebase Android, iOS, dan Web telah dibuat untuk project
+`dailybrief-ivanmahendraa`. Jika project Firebase atau aplikasi platform
+berubah, pasang FlutterFire CLI dan buat ulang konfigurasi:
 
-## Getting Started
+```powershell
+dart pub global activate flutterfire_cli
+flutterfire configure --project=dailybrief-ivanmahendraa --platforms=android,ios,web
+```
 
-This project is a starting point for a Flutter application.
+File aturan Firestore berada di `firestore.rules`. Setelah meninjau perubahan,
+deploy aturan hanya dengan akun Firebase yang berwenang:
 
-A few resources to get you started if this is your first Flutter project:
+```powershell
+firebase deploy --only firestore:rules --project=dailybrief-ivanmahendraa
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Konfigurasi API cuaca
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Cuaca menggunakan OpenWeatherMap Current Weather API. Salin contoh konfigurasi
+dan isi key Anda di file lokal `.env`:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Edit `.env`, lalu jalankan:
+
+```powershell
+flutter run --dart-define-from-file=.env
+```
+
+Alternatif tanpa file:
+
+```powershell
+flutter run --dart-define=OPENWEATHER_API_KEY=YOUR_API_KEY
+```
+
+Key bersifat opsional untuk menjalankan aplikasi; tanpa key, permintaan cuaca
+menampilkan status layanan belum dikonfigurasi. `.env` masuk `.gitignore` dan
+tidak boleh di-commit.
+
+**Penting:** `--dart-define` hanya menghindari hard-code key di sumber,
+bukan menyembunyikannya dari binary aplikasi yang didistribusikan. Batasi key
+sesuai kemampuan penyedia, pantau kuota, dan gunakan backend/proxy dengan
+secret server-side untuk produksi jika key harus dirahasiakan. Jangan
+menaruh key nyata pada dokumentasi, commit, log, atau screenshot.
+
+Reverse geocoding menggunakan geocoder bawaan Android/iOS dan tidak memerlukan
+Google Geocoding API key tersendiri. Hasilnya bergantung pada layanan platform
+dan mungkin memerlukan koneksi jaringan.
+
+## Menjalankan aplikasi
+
+Tanpa konfigurasi API cuaca:
+
+```powershell
+flutter run
+```
+
+Dengan `.env`:
+
+```powershell
+flutter run --dart-define-from-file=.env
+```
+
+Pilih perangkat tertentu dengan `-d <device-id>` setelah memeriksa `flutter
+devices`. Izin mikrofon dan lokasi diminta oleh layanan terkait saat
+dibutuhkan. Di iOS, tujuan izin dijelaskan pada `ios/Runner/Info.plist`.
+
+## Memeriksa dan membangun
+
+```powershell
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+APK debug dihasilkan di
+`build/app/outputs/flutter-apk/app-debug.apk`. Untuk iOS, gunakan macOS/Xcode:
+
+```powershell
+flutter build ios
+```
+
+Build release harus dilengkapi konfigurasi penandatanganan dan konfigurasi
+layanan produksi yang sesuai sebelum didistribusikan. Crashlytics mengumpulkan
+crash hanya pada build release Android/iOS; debug tidak mengaktifkan
+pengumpulan.
+
+## Data, Firebase, dan privasi
+
+- Firestore hanya menyimpan kategori perintah yang didukung dan timestamp
+  server pada `users/{uid}/command_history`.
+- Firebase Authentication membuat pengguna anonim. Aturan
+  `firestore.rules` membatasi akses ke UID pemilik, membatasi field yang boleh
+  ditulis, dan menolak update.
+- Audio, transkrip ucapan, teks jawaban, dan koordinat lokasi tidak disimpan
+  sebagai riwayat.
+- Firebase Analytics tidak diintegrasikan.
+- Crashlytics dinonaktifkan secara default dan hanya diaktifkan ketika aplikasi
+  berjalan dalam mode release Android/iOS. Pesan exception yang dikirim dari
+  handler global dibuat generik; stack trace tetap dikirim untuk diagnosis.
+  Handler tetap menampilkan error asli secara lokal di debug.
+
+## Hasil verifikasi terakhir
+
+Pada 4 November 2026:
+
+- `flutter test` — 271 tes lulus.
+- `flutter analyze` — tidak menemukan masalah.
+- `flutter build apk --debug` — berhasil.
+
+Validasi perangkat fisik, pengaktifan TalkBack/VoiceOver, konfigurasi Firebase
+Console, dan key produksi harus dilakukan di lingkungan/rilis terkait; hasil
+tes otomatis bukan pengganti pemeriksaan tersebut.

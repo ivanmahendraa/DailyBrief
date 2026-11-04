@@ -204,7 +204,7 @@ void main() {
         ),
       );
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 1500));
+      await tester.pump();
       await tester.pump();
       await tester.pumpAndSettle();
 

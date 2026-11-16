@@ -25,8 +25,10 @@ enum VoiceInteractionState {
 class VoiceController extends ChangeNotifier {
   static const String confirmationFailureMessage =
       'Maaf, saya tidak dapat memberikan konfirmasi suara. Coba lagi.';
-  static const String unsupportedCommandResponse =
-      'Maaf, perintah tersebut belum tersedia.';
+  static const String noSpeechResponse =
+      'Saya belum mendengar suara. Silakan coba lagi.';
+  static const String clarificationResponse =
+      'Bisa dijelaskan apakah Anda ingin mengetahui cuaca, lokasi, atau tanggal?';
   static const String permissionDeniedMessage =
       'Izin mikrofon belum diberikan. Periksa pengaturan aplikasi.';
   static const String unavailableMessage =
@@ -43,6 +45,7 @@ class VoiceController extends ChangeNotifier {
   final TtsService _ttsService;
   final LocationService _locationService;
   final GeocodingService _geocodingService;
+  final PlaceSearchService _placeSearchService;
   final WeatherService _weatherService;
   final CommandHistoryWriter _commandHistoryWriter;
   final WeatherResponseGenerator _weatherResponseGenerator;
@@ -57,6 +60,8 @@ class VoiceController extends ChangeNotifier {
   bool _finalResultHandled = false;
   bool _cancelRequested = false;
   bool _disposed = false;
+  bool _previousWeatherContext = false;
+  String? _previousWeatherLocationName;
   TtsPlaybackStatus? _lastPlaybackStatus;
   int _diagnosticDoneCount = 0;
   int _diagnosticLocationHandlerCount = 0;
@@ -68,6 +73,7 @@ class VoiceController extends ChangeNotifier {
     TtsService? ttsService,
     LocationService? locationService,
     GeocodingService? geocodingService,
+    PlaceSearchService? placeSearchService,
     WeatherService? weatherService,
     CommandHistoryWriter? commandHistoryWriter,
     WeatherResponseGenerator? weatherResponseGenerator,
@@ -76,6 +82,7 @@ class VoiceController extends ChangeNotifier {
        _ttsService = ttsService ?? TtsService(),
        _locationService = locationService ?? LocationService(),
        _geocodingService = geocodingService ?? GeocodingService(),
+       _placeSearchService = placeSearchService ?? PlaceSearchService(),
        _weatherService = weatherService ?? WeatherService(),
        _commandHistoryWriter =
            commandHistoryWriter ?? FirestoreCommandHistoryService(),
@@ -196,7 +203,7 @@ class VoiceController extends ChangeNotifier {
     await startListening();
   }
 
-  /// Clears the visible error message without starting another session.
+  /// Menghapus pesan kesalahan yang terlihat tanpa memulai sesi baru.
   void resetError() {
     if (_disposed || _errorMessage == null) return;
     _errorMessage = null;
@@ -252,31 +259,67 @@ class VoiceController extends ChangeNotifier {
     if (status != SpeechEngineStatus.done) return;
 
     _sessionActive = false;
-    final command = _finalResultHandled
-        ? _commandParser.parse(_recognizedText)
-        : VoiceCommand.unknown;
+    final parsedCommand = _finalResultHandled
+        ? _commandParser.parse(
+            _recognizedText,
+            now: _dateTimeService.currentLocalDateTime,
+            previousWeatherContext: _previousWeatherContext,
+            previousWeatherLocationName: _previousWeatherLocationName,
+          )
+        : const ParsedCommand(command: VoiceCommand.unknown);
+    final command = parsedCommand.command;
+    if (command == VoiceCommand.weather) {
+      _previousWeatherContext = true;
+      _previousWeatherLocationName = parsedCommand.locationName;
+    } else if (command != VoiceCommand.unknown) {
+      _previousWeatherContext = false;
+      _previousWeatherLocationName = null;
+    }
     if (command != VoiceCommand.unknown) {
       unawaited(_recordCommandHistory(command));
     }
     switch (command) {
       case VoiceCommand.day:
+        final date = parsedCommand.date;
         unawaited(
-          _speakResponse(sessionId, _dateTimeService.currentDayResponse),
+          _speakResponse(
+            sessionId,
+            date == null ||
+                    _dateTimeService.currentLocalDateTime.year == date.year &&
+                        _dateTimeService.currentLocalDateTime.month ==
+                            date.month &&
+                        _dateTimeService.currentLocalDateTime.day == date.day
+                ? _dateTimeService.currentDayResponse
+                : _dateTimeService.responseForDate(date, includeWeekday: true),
+          ),
         );
       case VoiceCommand.date:
+        final date = parsedCommand.date;
+        final current = _dateTimeService.currentLocalDateTime;
         unawaited(
-          _speakResponse(sessionId, _dateTimeService.currentDateResponse),
+          _speakResponse(
+            sessionId,
+            date == null ||
+                    current.year == date.year &&
+                        current.month == date.month &&
+                        current.day == date.day
+                ? _dateTimeService.currentDateResponse
+                : _dateTimeService.responseForDate(date),
+          ),
         );
       case VoiceCommand.time:
         unawaited(
           _speakResponse(sessionId, _dateTimeService.currentTimeResponse),
         );
       case VoiceCommand.location:
-        unawaited(_handleLocationCommand(sessionId));
+        unawaited(_handleLocationCommand(sessionId, parsedCommand));
       case VoiceCommand.unknown:
-        unawaited(_speakResponse(sessionId, unsupportedCommandResponse));
+        final response = _recognizedText.trim().isEmpty
+            ? noSpeechResponse
+            : clarificationResponse;
+        unawaited(_speakResponse(sessionId, response));
       case VoiceCommand.weather:
-        unawaited(_handleWeatherCommand(sessionId));
+        unawaited(_handleWeatherCommand(sessionId, parsedCommand));
     }
   }
 
@@ -309,7 +352,17 @@ class VoiceController extends ChangeNotifier {
     if (!_isCurrentSession(sessionId)) return;
     _sessionActive = false;
     _startInProgress = false;
+    if (_isNoSpeechError(error)) {
+      unawaited(_speakResponse(sessionId, noSpeechResponse));
+      return;
+    }
     _setError(_safeSpeechErrorMessage(error));
+  }
+
+  bool _isNoSpeechError(SpeechRecognitionError error) {
+    final normalizedMessage = error.message.toLowerCase();
+    return normalizedMessage.contains('error_no_match') ||
+        normalizedMessage.contains('error_speech_timeout');
   }
 
   String _safeSpeechErrorMessage(SpeechRecognitionError error) {
@@ -322,7 +375,10 @@ class VoiceController extends ChangeNotifier {
     return sessionFailureMessage;
   }
 
-  Future<void> _handleLocationCommand(int sessionId) async {
+  Future<void> _handleLocationCommand(
+    int sessionId,
+    ParsedCommand command,
+  ) async {
     _diagnosticLocationHandlerCount++;
     debugPrint(
       '[DIAGNOSTIC][LOCATION_HANDLER] called '
@@ -333,6 +389,21 @@ class VoiceController extends ChangeNotifier {
     _setState(VoiceInteractionState.processing);
 
     try {
+      if (command.locationName case final placeName?) {
+        final placeResult = await _placeSearchService.searchPlace(placeName);
+        if (!_isCurrentSession(sessionId) || _disposed) return;
+        if (!placeResult.isSuccess || placeResult.address == null) {
+          await _speakResponse(sessionId, placeResult.message);
+          return;
+        }
+        final address = placeResult.address!;
+        final name = address.speechAddress.trim().isNotEmpty
+            ? address.speechAddress
+            : address.displayName;
+        await _speakResponse(sessionId, 'Lokasi $name.');
+        return;
+      }
+
       final locationResult = await _locationService.getCurrentPosition();
       if (!_isCurrentSession(sessionId) || _disposed) return;
 
@@ -391,28 +462,56 @@ class VoiceController extends ChangeNotifier {
     }
   }
 
-  Future<void> _handleWeatherCommand(int sessionId) async {
+  Future<void> _handleWeatherCommand(
+    int sessionId,
+    ParsedCommand command,
+  ) async {
     if (!_isCurrentSession(sessionId) || _disposed) return;
 
     _setState(VoiceInteractionState.processing);
 
     try {
-      final locationResult = await _locationService.getCurrentPosition();
-      if (!_isCurrentSession(sessionId) || _disposed) return;
+      late final double latitude;
+      late final double longitude;
+      String? speechLocation;
+      if (command.locationName case final placeName?) {
+        final placeResult = await _placeSearchService.searchPlace(placeName);
+        if (!_isCurrentSession(sessionId) || _disposed) return;
+        if (!placeResult.isSuccess ||
+            placeResult.latitude == null ||
+            placeResult.longitude == null) {
+          await _speakResponse(sessionId, placeResult.message);
+          return;
+        }
+        latitude = placeResult.latitude!;
+        longitude = placeResult.longitude!;
+        final address = placeResult.address;
+        if (address != null) {
+          speechLocation = address.speechAddress.trim().isNotEmpty
+              ? address.speechAddress
+              : address.displayName;
+        }
+      } else {
+        final locationResult = await _locationService.getCurrentPosition();
+        if (!_isCurrentSession(sessionId) || _disposed) return;
 
-      if (!locationResult.isSuccess || locationResult.location == null) {
-        await _speakResponse(sessionId, locationResult.message);
-        return;
+        if (!locationResult.isSuccess || locationResult.location == null) {
+          await _speakResponse(sessionId, locationResult.message);
+          return;
+        }
+
+        latitude = locationResult.location!.latitude;
+        longitude = locationResult.location!.longitude;
       }
-
-      final coords = locationResult.location!;
       debugPrint(
         '[DIAGNOSTIC][WEATHER_LOCATION] sessionId=$sessionId '
-        'latitude=${coords.latitude} longitude=${coords.longitude}',
+        'latitude=$latitude longitude=$longitude',
       );
-      final weatherResult = await _weatherService.getCurrentWeather(
-        latitude: coords.latitude,
-        longitude: coords.longitude,
+      final date = command.date ?? _dateTimeService.currentLocalDateTime;
+      final weatherResult = await _weatherService.getWeatherForDate(
+        latitude: latitude,
+        longitude: longitude,
+        date: date,
       );
       if (!_isCurrentSession(sessionId) || _disposed) return;
 
@@ -421,26 +520,27 @@ class VoiceController extends ChangeNotifier {
         return;
       }
 
-      String? speechLocation;
-      try {
-        final geocodingResult = await _geocodingService.reverseGeocode(
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-        );
-        if (!_isCurrentSession(sessionId) || _disposed) return;
+      if (speechLocation == null) {
+        try {
+          final geocodingResult = await _geocodingService.reverseGeocode(
+            latitude: latitude,
+            longitude: longitude,
+          );
+          if (!_isCurrentSession(sessionId) || _disposed) return;
 
-        if (geocodingResult.isSuccess && geocodingResult.address != null) {
-          final formattedLocation = geocodingResult.address!.speechAddress
-              .trim();
-          if (formattedLocation.isNotEmpty) {
-            speechLocation = formattedLocation;
+          if (geocodingResult.isSuccess && geocodingResult.address != null) {
+            final formattedLocation = geocodingResult.address!.speechAddress
+                .trim();
+            if (formattedLocation.isNotEmpty) {
+              speechLocation = formattedLocation;
+            }
           }
+        } catch (error, stackTrace) {
+          debugPrint(
+            'VoiceController weather reverse geocoding error: '
+            '$error\n$stackTrace',
+          );
         }
-      } catch (error, stackTrace) {
-        debugPrint(
-          'VoiceController weather reverse geocoding error: '
-          '$error\n$stackTrace',
-        );
       }
 
       if (!_isCurrentSession(sessionId) || _disposed) return;
@@ -459,6 +559,7 @@ class VoiceController extends ChangeNotifier {
       final responseText = _weatherResponseGenerator.generate(
         weatherData,
         locationName: speechLocation,
+        specificQuestion: command.specificQuestion,
       );
       debugPrint(
         '[DIAGNOSTIC][WEATHER_RESPONSE_TEXT] '

@@ -148,10 +148,10 @@ class DefaultSpeechToTextClient implements SpeechToTextClient {
   Future<void> cancel() => _speechToText.cancel();
 }
 
-/// Minimal session wrapper for one-shot voice input.
+/// Mengelola satu sesi pengenalan suara sesuai permintaan pengguna.
 ///
-/// Constructing this service does not initialize the recognizer or request
-/// permission. Call [startListening] only in response to a user action.
+/// Tidak menginisialisasi engine atau meminta izin saat dibuat.
+/// Panggil [startListening] sebagai respons terhadap tindakan pengguna.
 class SpeechToTextService {
   final SpeechToTextClient _client;
 
@@ -241,8 +241,9 @@ class SpeechToTextService {
     }
   }
 
-  /// Requests one listen session. The result means the request was accepted;
-  /// [isListening] becomes true only after the engine reports `listening`.
+  /// Meminta satu sesi pengenalan suara dan mengembalikan hasil penerimaan permintaan.
+  ///
+  /// Status [isListening] berubah menjadi `true` setelah engine melaporkan `listening`.
   Future<SpeechStartResult> startListening({
     required SpeechResultCallback onResult,
     SpeechEngineStatusCallback? onStatus,

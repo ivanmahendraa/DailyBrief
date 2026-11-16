@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
-/// Konfigurasi tema visual dasar aplikasi DailyBrief.
+/// Mengonfigurasi tema visual aplikasi DailyBrief.
 ///
-/// Menyediakan tema terang yang bersih, kontras tinggi, dan ramah aksesibilitas
-/// sesuai standar PRD NFR-01 dan TASK-06.
+/// Menyusun tema terang menggunakan warna dari [AppColors].
 class AppTheme {
   AppTheme._();
 
-  /// Tema terang (Light Theme) utama aplikasi.
+  /// Menyusun tema terang utama aplikasi.
   static ThemeData get lightTheme {
     final colorScheme = const ColorScheme.light().copyWith(
       primary: AppColors.primary,

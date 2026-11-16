@@ -1,35 +1,33 @@
 import 'package:flutter/foundation.dart';
 
-/// Model data yang merepresentasikan alamat dan informasi wilayah hasil reverse geocoding.
-///
-/// Memenuhi kebutuhan TASK-47 dan FR-09 pada PRD.md.
+/// Menyimpan komponen alamat dan wilayah dari hasil geocoding.
 @immutable
 class LocationAddress {
-  /// Nama jalan atau rute sebagaimana diberikan provider.
+  /// Menyimpan nama jalan atau rute dari penyedia geocoding.
   final String? street;
 
-  /// Nomor alamat sebagaimana diberikan provider.
+  /// Menyimpan nomor alamat dari penyedia geocoding.
   final String? streetNumber;
 
-  /// Nama sub-lokalitas; tidak selalu setara dengan kelurahan/desa.
+  /// Menyimpan nama sublokalitas yang belum tentu setara dengan kelurahan atau desa.
   final String? subLocality;
 
-  /// Nama kecamatan hanya jika provider mengidentifikasinya secara eksplisit.
+  /// Menyimpan nama kecamatan jika penyedia mengidentifikasikannya secara eksplisit.
   final String? district;
 
-  /// Nama kota atau kabupaten (misal: "Kota Batam", "Batam", "Jakarta Pusat").
+  /// Menyimpan nama kota atau kabupaten, misalnya "Kota Batam" atau "Jakarta Pusat".
   final String? city;
 
-  /// Nama provinsi atau region (misal: "Kepulauan Riau", "DKI Jakarta").
+  /// Menyimpan nama provinsi atau wilayah, misalnya "Kepulauan Riau" atau "DKI Jakarta".
   final String? province;
 
-  /// Nama negara (misal: "Indonesia").
+  /// Menyimpan nama negara, misalnya "Indonesia".
   final String? country;
 
-  /// Alamat terformat lengkap dari penyedia geocoding jika tersedia.
+  /// Menyimpan alamat lengkap terformat jika tersedia.
   final String? formattedAddress;
 
-  /// Nama tempat atau penanda lokasi spesifik jika tersedia.
+  /// Menyimpan nama tempat atau penanda lokasi spesifik jika tersedia.
   final String? placeName;
 
   const LocationAddress({
@@ -44,15 +42,15 @@ class LocationAddress {
     this.placeName,
   });
 
-  /// Mengembalikan nama lokasi yang representatif untuk dibacakan atau ditampilkan.
+  /// Menyusun nama lokasi yang representatif untuk dibacakan atau ditampilkan.
   ///
-  /// Memprioritaskan:
-  /// 1. Nama tempat spesifik jika tersedia.
-  /// 2. Kota + Provinsi jika keduanya ada, atau Kota saja.
-  /// 3. Sub-lokalitas / kecamatan.
-  /// 4. Provinsi.
-  /// 5. Negara.
-  /// 6. Alamat terformat.
+  /// Memilih komponen dengan urutan berikut:
+  /// - Menggunakan nama tempat, disertai kota jika tersedia.
+  /// - Menggunakan kota dan provinsi, atau kota saja.
+  /// - Menggunakan sublokalitas.
+  /// - Menggunakan provinsi.
+  /// - Menggunakan alamat terformat.
+  /// - Menggunakan negara sebagai pilihan terakhir.
   String get displayName {
     if (placeName != null && placeName!.trim().isNotEmpty) {
       if (city != null && city!.trim().isNotEmpty) {
@@ -83,7 +81,7 @@ class LocationAddress {
     return country ?? '';
   }
 
-  /// Merangkai hanya komponen administratif ringkas yang tersedia.
+  /// Merangkai komponen wilayah ringkas yang tersedia.
   String get speechAddress {
     final parts = <String>[];
     final seen = <String>{};
@@ -114,7 +112,7 @@ class LocationAddress {
     return parts.join(', ');
   }
 
-  /// A place name is spoken as an approximate landmark when no street is known.
+  /// Menandai nama tempat sebagai patokan perkiraan jika nama jalan tidak tersedia.
   bool get usesPlaceNameAsLandmark =>
       _nonEmpty(placeName) != null && _nonEmpty(street) == null;
 

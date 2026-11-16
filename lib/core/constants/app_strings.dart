@@ -1,31 +1,39 @@
-/// Konstanta teks global aplikasi DailyBrief.
+/// Menyediakan konstanta teks global aplikasi DailyBrief.
 class AppStrings {
   AppStrings._();
 
-  /// Nama aplikasi (TASK-12).
+  /// Menyimpan nama aplikasi.
   static const String appName = 'DailyBrief';
 
-  /// Sapaan singkat saat Home Screen pertama kali ditampilkan.
+  /// Menyimpan sapaan saat halaman Home pertama kali ditampilkan.
   static const String welcomeGreeting =
       'Selamat datang di DailyBrief. Temukan Informasi dalam Satu Sentuhan.';
 
-  /// Konfirmasi suara sebelum pengenalan ucapan dimulai.
+  /// Menyimpan konfirmasi suara sebelum pengenalan ucapan dimulai.
   static const String voiceConfirmation = 'Silakan berbicara.';
 
-  /// Status interaksi awal (FR-03, TASK-12).
+  /// Menyimpan label status interaksi awal.
   static const String statusReady = 'Siap Digunakan';
 
-  /// Status ketika aplikasi membacakan konfirmasi sebelum mendengarkan.
+  /// Menyimpan label status saat aplikasi membacakan konfirmasi.
   static const String statusConfirming = 'Mengonfirmasi';
 
-  /// Judul area interaksi utama (TASK-12).
+  /// Menyimpan judul area interaksi utama.
   static const String touchAreaTitle = 'Area Sentuh Utama';
 
-  /// Petunjuk area interaksi utama (TASK-12).
+  /// Menyimpan petunjuk penggunaan area interaksi utama.
   static const String touchAreaSubtitle =
       'Sentuh di mana saja pada area ini untuk mulai berbicara';
 
-  /// Contoh perintah suara yang didukung (FR-05, TASK-12).
+  /// Menyimpan ringkasan kategori perintah suara yang didukung.
   static const String commandHints =
       'Perintah suara: Hari · Tanggal · Jam · Cuaca · Lokasi';
+
+  /// Menyimpan tooltip untuk membuka informasi sumber data.
+  static const String dataSourcesTooltip = 'Info sumber data';
+
+  /// Menyimpan atribusi penyedia data cuaca dan geocoding.
+  static const String dataSourcesAttribution =
+      'Sumber cuaca: Open-Meteo (CC BY 4.0). '
+      'Lokasi: © OpenStreetMap contributors.';
 }

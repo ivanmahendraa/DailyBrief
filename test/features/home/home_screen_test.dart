@@ -202,11 +202,17 @@ void main() {
     );
 
     testWidgets(
-      '5. Menampilkan petunjuk contoh perintah suara pada bagian bawah',
+      '5. Atribusi sumber data tidak ditampilkan di Home dan tersedia di dialog info',
       (WidgetTester tester) async {
         await tester.pumpWidget(buildTestableHomeScreen());
 
         expect(find.text(AppStrings.commandHints), findsOneWidget);
+        expect(find.text(AppStrings.dataSourcesAttribution), findsNothing);
+
+        await tester.tap(find.byTooltip(AppStrings.dataSourcesTooltip));
+        await tester.pumpAndSettle();
+
+        expect(find.text(AppStrings.dataSourcesAttribution), findsOneWidget);
       },
     );
 
@@ -294,24 +300,25 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('area utama memiliki label, petunjuk, dan aksi sentuh semantik', (
-      WidgetTester tester,
-    ) async {
-      final semanticsHandle = tester.ensureSemantics();
-      try {
-        await tester.pumpWidget(buildTestableHomeScreen());
-        final touchArea = tester.getSemantics(
-          find.bySemanticsLabel('Area interaksi utama'),
-        );
-        final touchAreaData = touchArea.getSemanticsData();
+    testWidgets(
+      'area utama memiliki label, petunjuk, dan aksi sentuh semantik',
+      (WidgetTester tester) async {
+        final semanticsHandle = tester.ensureSemantics();
+        try {
+          await tester.pumpWidget(buildTestableHomeScreen());
+          final touchArea = tester.getSemantics(
+            find.bySemanticsLabel('Area interaksi utama'),
+          );
+          final touchAreaData = touchArea.getSemanticsData();
 
-        expect(touchAreaData.label, 'Area interaksi utama');
-        expect(touchAreaData.hint, AppStrings.touchAreaSubtitle);
-        expect(touchAreaData.hasAction(SemanticsAction.tap), isTrue);
-      } finally {
-        semanticsHandle.dispose();
-      }
-    });
+          expect(touchAreaData.label, 'Area interaksi utama');
+          expect(touchAreaData.hint, AppStrings.touchAreaSubtitle);
+          expect(touchAreaData.hasAction(SemanticsAction.tap), isTrue);
+        } finally {
+          semanticsHandle.dispose();
+        }
+      },
+    );
 
     test(
       'Controller kedua menerima status melalui STT service yang sama',

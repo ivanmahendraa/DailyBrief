@@ -230,7 +230,7 @@ class _IntegrationLocationClient implements LocationClient {
   }
 }
 
-class _IntegrationWeatherClient implements WeatherClient {
+class _IntegrationWeatherClient implements WeatherClient, DateWeatherClient {
   WeatherResult resultToReturn = WeatherResult.success(
     const WeatherData(
       description: 'cerah berawan',
@@ -246,6 +246,7 @@ class _IntegrationWeatherClient implements WeatherClient {
   double? lastLongitude;
   Duration? delay;
   bool throwException = false;
+  DateTime? lastRequestedDate;
 
   @override
   Future<WeatherResult> getCurrentWeather({
@@ -262,6 +263,52 @@ class _IntegrationWeatherClient implements WeatherClient {
       throw StateError('Weather client crash');
     }
     return resultToReturn;
+  }
+
+  @override
+  Future<WeatherResult> getWeatherForDate({
+    required double latitude,
+    required double longitude,
+    required DateTime date,
+  }) async {
+    lastRequestedDate = date;
+    final result = await getCurrentWeather(
+      latitude: latitude,
+      longitude: longitude,
+    );
+    if (date == DateTime(2026, 10, 24) || result.data == null) return result;
+
+    final data = result.data!;
+    return WeatherResult.success(
+      WeatherData(
+        description: data.description,
+        temperature: data.temperature,
+        forecastDate: date,
+        minimumTemperature: 23,
+        maximumTemperature: 30,
+        weatherCode: 2,
+      ),
+    );
+  }
+}
+
+class _IntegrationPlaceSearchService extends PlaceSearchService {
+  _IntegrationPlaceSearchService() : super();
+
+  final List<String> queries = [];
+
+  @override
+  Future<PlaceSearchResult> searchPlace(String query) async {
+    queries.add(query);
+    return PlaceSearchResult.success(
+      address: const LocationAddress(
+        city: 'Medan',
+        province: 'Sumatera Utara',
+        country: 'Indonesia',
+      ),
+      latitude: 3.5952,
+      longitude: 98.6722,
+    );
   }
 }
 
@@ -280,10 +327,10 @@ class _WeatherTestFixture {
   final ttsService = _IntegrationTtsService();
   final locationClient = _IntegrationLocationClient();
   final weatherClient = _IntegrationWeatherClient();
+  final placeSearchService = _IntegrationPlaceSearchService();
 
   late final LocationService locationService = LocationService(locationClient);
-  late final GeocodingService geocodingService =
-      _IntegrationGeocodingService();
+  late final GeocodingService geocodingService = _IntegrationGeocodingService();
   late final WeatherService weatherService = WeatherService(weatherClient);
   late final SpeechToTextService speechService = SpeechToTextService(
     client: speechClient,
@@ -298,6 +345,7 @@ class _WeatherTestFixture {
     ttsService: ttsService,
     locationService: locationService,
     geocodingService: geocodingService,
+    placeSearchService: placeSearchService,
     weatherService: weatherService,
     commandHistoryWriter: _NoOpCommandHistoryWriter(),
     weatherResponseGenerator: const WeatherResponseGenerator(),
@@ -384,6 +432,64 @@ void main() {
         },
       );
 
+      test(
+        '3. Named-city forecast resolves place, date, and follow-up context',
+        () async {
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('Cuaca besok di Medan');
+
+          expect(fixture.placeSearchService.queries, ['medan']);
+          expect(fixture.locationClient.getPositionCallCount, 0);
+          expect(fixture.weatherClient.lastLatitude, 3.5952);
+          expect(fixture.weatherClient.lastLongitude, 98.6722);
+          expect(
+            fixture.weatherClient.lastRequestedDate,
+            DateTime(2026, 10, 25),
+          );
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            'Cuaca di Medan, Sumatera Utara, Indonesia pada '
+            '25 Oktober 2026 cerah berawan dengan suhu berkisar antara '
+            '23 hingga 30 derajat Celsius.',
+          );
+
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('Hari Rabu');
+
+          expect(fixture.placeSearchService.queries, ['medan', 'medan']);
+          expect(
+            fixture.weatherClient.lastRequestedDate,
+            DateTime(2026, 10, 28),
+          );
+          expect(fixture.weatherClient.lastLatitude, 3.5952);
+        },
+      );
+
+      test(
+        'Yesterday weather follow-up keeps the previous named location',
+        () async {
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('Cuaca besok di Medan');
+
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('Ya kemarin');
+
+          expect(fixture.placeSearchService.queries, ['medan', 'medan']);
+          expect(
+            fixture.weatherClient.lastRequestedDate,
+            DateTime(2026, 10, 23),
+          );
+          expect(fixture.weatherClient.lastLatitude, 3.5952);
+          expect(fixture.locationClient.getPositionCallCount, 0);
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            'Cuaca di Medan, Sumatera Utara, Indonesia pada '
+            '23 Oktober 2026 cerah berawan dengan suhu berkisar antara '
+            '23 hingga 30 derajat Celsius.',
+          );
+        },
+      );
+
       test('3. Verifikasi transisi state lengkap: listening -> processing -> speaking -> idle', () async {
         final ttsCompleter = Completer<TtsPlaybackResult>();
         fixture.ttsService.pendingResponse = ttsCompleter;
@@ -418,24 +524,27 @@ void main() {
         );
       });
 
-      test('4. Nama lokasi hasil geocoding digunakan meski cityName cuaca null', () async {
-        fixture.weatherClient.resultToReturn = WeatherResult.success(
-          const WeatherData(
-            description: 'hujan ringan',
-            temperature: 25.6,
-            cityName: null,
-          ),
-        );
+      test(
+        '4. Nama lokasi hasil geocoding digunakan meski cityName cuaca null',
+        () async {
+          fixture.weatherClient.resultToReturn = WeatherResult.success(
+            const WeatherData(
+              description: 'hujan ringan',
+              temperature: 25.6,
+              cityName: null,
+            ),
+          );
 
-        await fixture.startAndConfirmListening();
-        await fixture.emitCommandAndComplete('cuaca');
+          await fixture.startAndConfirmListening();
+          await fixture.emitCommandAndComplete('cuaca');
 
-        expect(
-          fixture.ttsService.lastSpokenResponse,
-          'Cuaca di Batam saat ini hujan ringan dengan suhu 26 derajat Celsius.',
-        );
-        expect(fixture.controller.state, VoiceInteractionState.idle);
-      });
+          expect(
+            fixture.ttsService.lastSpokenResponse,
+            'Cuaca di Batam saat ini hujan ringan dengan suhu 26 derajat Celsius.',
+          );
+          expect(fixture.controller.state, VoiceInteractionState.idle);
+        },
+      );
     });
 
     group('Uji Kegagalan Layanan Lokasi pada Alur Cuaca (Location Failure Scenarios)', () {
@@ -518,8 +627,8 @@ void main() {
     });
 
     group('Uji Kegagalan Layanan Cuaca & Jaringan (Weather & Network Failure Scenarios)', () {
-      test('1. API cuaca belum dikonfigurasi (unconfigured)', () async {
-        fixture.weatherClient.resultToReturn = WeatherResult.unconfigured();
+      test('1. API cuaca tidak dapat dijangkau (networkError)', () async {
+        fixture.weatherClient.resultToReturn = WeatherResult.networkError();
 
         await fixture.startAndConfirmListening();
         await fixture.emitCommandAndComplete('cuaca');
@@ -528,26 +637,20 @@ void main() {
         expect(fixture.weatherClient.callCount, 1);
         expect(
           fixture.ttsService.lastSpokenResponse,
-          WeatherMessages.unconfigured,
+          WeatherMessages.networkError,
         );
         expect(fixture.controller.state, VoiceInteractionState.idle);
       });
 
-      test(
-        '2. API key tidak valid / tidak diotorisasi (unauthorized / HTTP 401)',
-        () async {
-          fixture.weatherClient.resultToReturn = WeatherResult.unauthorized();
+      test('2. Layanan cuaca mengembalikan kesalahan API', () async {
+        fixture.weatherClient.resultToReturn = WeatherResult.apiError();
 
-          await fixture.startAndConfirmListening();
-          await fixture.emitCommandAndComplete('cuaca');
+        await fixture.startAndConfirmListening();
+        await fixture.emitCommandAndComplete('cuaca');
 
-          expect(
-            fixture.ttsService.lastSpokenResponse,
-            WeatherMessages.unauthorized,
-          );
-          expect(fixture.controller.state, VoiceInteractionState.idle);
-        },
-      );
+        expect(fixture.ttsService.lastSpokenResponse, WeatherMessages.apiError);
+        expect(fixture.controller.state, VoiceInteractionState.idle);
+      });
 
       test('3. Batas kuota API terlampaui (rateLimited / HTTP 429)', () async {
         fixture.weatherClient.resultToReturn = WeatherResult.rateLimited();
@@ -775,7 +878,7 @@ void main() {
         await fixture.emitCommandAndComplete('putar musik pop');
         expect(
           fixture.ttsService.lastSpokenResponse,
-          VoiceController.unsupportedCommandResponse,
+          VoiceController.clarificationResponse,
         );
 
         // Pastikan tidak ada pemanggilan ke WeatherClient untuk command non-cuaca

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
-/// Pesan standar yang digunakan terkait izin dan status layanan lokasi.
+/// Menyediakan pesan standar tentang izin dan status layanan lokasi.
 class LocationPermissionMessages {
   const LocationPermissionMessages._();
 
@@ -19,7 +19,7 @@ class LocationPermissionMessages {
   static const String error = 'Terjadi kesalahan saat memeriksa izin lokasi.';
 }
 
-/// Pesan standar terkait pengambilan koordinat lokasi pengguna.
+/// Menyediakan pesan standar tentang pengambilan koordinat pengguna.
 class LocationMessages {
   const LocationMessages._();
 
@@ -29,7 +29,7 @@ class LocationMessages {
   static const String failure = 'Gagal mengambil koordinat lokasi pengguna.';
 }
 
-/// Status izin lokasi aplikasi DailyBrief.
+/// Menentukan status izin lokasi aplikasi DailyBrief.
 enum LocationPermissionStatus {
   granted,
   denied,
@@ -39,7 +39,7 @@ enum LocationPermissionStatus {
   error,
 }
 
-/// Representasi hasil pemeriksaan atau permintaan izin lokasi.
+/// Menyimpan hasil pemeriksaan atau permintaan izin lokasi.
 @immutable
 class LocationPermissionResult {
   final LocationPermissionStatus status;
@@ -76,7 +76,7 @@ class LocationPermissionResult {
       'LocationPermissionResult(status: $status, message: $message, rawPermission: $rawPermission)';
 }
 
-/// Representasi koordinat lokasi pengguna.
+/// Menyimpan koordinat dan metadata lokasi pengguna.
 @immutable
 class UserLocation {
   final double latitude;
@@ -117,7 +117,7 @@ class UserLocation {
       'UserLocation(latitude: $latitude, longitude: $longitude)';
 }
 
-/// Status hasil dari pengambilan posisi lokasi pengguna.
+/// Menentukan status hasil pengambilan lokasi pengguna.
 enum LocationResultStatus {
   success,
   permissionDenied,
@@ -127,7 +127,7 @@ enum LocationResultStatus {
   failure,
 }
 
-/// Representasi hasil pengambilan koordinat posisi pengguna.
+/// Menyimpan hasil pengambilan koordinat lokasi pengguna.
 @immutable
 class LocationResult {
   final LocationResultStatus status;
@@ -199,8 +199,7 @@ class LocationResult {
       'LocationResult(status: $status, location: $location, message: $message)';
 }
 
-/// Kontrak abstraksi untuk wrapper platform geolocator,
-/// memungkinkan pengujian modular tanpa memanggil native channel.
+/// Mendefinisikan kontrak client geolocator untuk pengujian tanpa native channel.
 abstract interface class LocationClient {
   Future<bool> isLocationServiceEnabled();
   Future<LocationPermission> checkPermission();
@@ -210,7 +209,7 @@ abstract interface class LocationClient {
   Future<Position> getCurrentPosition({LocationSettings? locationSettings});
 }
 
-/// Implementasi default [LocationClient] yang menggunakan API statis dari `geolocator`.
+/// Mengimplementasikan [LocationClient] menggunakan API statis `geolocator`.
 class DefaultLocationClient implements LocationClient {
   const DefaultLocationClient();
 
@@ -236,9 +235,7 @@ class DefaultLocationClient implements LocationClient {
       Geolocator.getCurrentPosition(locationSettings: locationSettings);
 }
 
-/// Service untuk menangani pengecekan izin lokasi dan pengambilan koordinat posisi pengguna.
-///
-/// Memenuhi kebutuhan TASK-45, TASK-46, dan FR-09 pada PRD.md.
+/// Memeriksa izin lokasi dan mengambil koordinat perangkat pengguna.
 class LocationService {
   final LocationClient _client;
 
@@ -303,7 +300,7 @@ class LocationService {
     }
   }
 
-  /// Mengecek status izin lokasi saat ini dan memetakannya ke [LocationPermissionResult].
+  /// Mengecek status izin saat ini dan memetakannya ke [LocationPermissionResult].
   Future<LocationPermissionResult> checkPermissionStatus() async {
     try {
       final permission = await _client.checkPermission();
@@ -319,13 +316,13 @@ class LocationService {
     }
   }
 
-  /// Meminta izin lokasi secara terpadu dengan penanganan:
-  /// 1. Pengecekan apakah layanan lokasi aktif (jika [checkServiceEnabled] bernilai `true`).
-  /// 2. Pengecekan izin saat ini: jika sudah granted, langsung sukses.
-  /// 3. Jika izin ditolak permanen (`deniedForever`), langsung kembalikan status `deniedForever`
-  ///    tanpa memanggil `requestPermission()` yang sia-sia, disertai panduan ke pengaturan.
-  /// 4. Jika izin `denied` atau `unableToDetermine`, lakukan permintaan izin `requestPermission()`.
-  /// 5. Mengembalikan [LocationPermissionResult] sesuai respons pengguna.
+  /// Memeriksa layanan lokasi dan meminta izin bila diperlukan.
+  ///
+  /// - Memeriksa layanan lokasi jika [checkServiceEnabled] bernilai `true`.
+  /// - Mengembalikan status berhasil jika izin sudah diberikan.
+  /// - Mengembalikan status `deniedForever` tanpa meminta izin ulang jika ditolak permanen.
+  /// - Meminta izin jika statusnya `denied` atau `unableToDetermine`.
+  /// - Memetakan hasil ke [LocationPermissionResult].
   Future<LocationPermissionResult> requestLocationPermission({
     bool checkServiceEnabled = true,
   }) async {
@@ -371,13 +368,12 @@ class LocationService {
     }
   }
 
-  /// Mengambil posisi koordinat saat ini dari perangkat pengguna.
+  /// Mengambil koordinat lokasi terkini dari perangkat pengguna.
   ///
-  /// Menjalankan alur:
-  /// 1. Memeriksa dan meminta izin lokasi melalui [requestLocationPermission].
-  /// 2. Jika izin ditolak, ditolak permanen, atau layanan GPS mati, mengembalikan [LocationResult] yang sesuai.
-  /// 3. Jika izin diberikan dan GPS aktif, memanggil platform untuk mengambil [Position] dengan batasan [timeout].
-  /// 4. Menangani kondisi timeout dan exception lainnya dari platform geolocator.
+  /// - Memeriksa izin melalui [requestLocationPermission].
+  /// - Mengembalikan status yang sesuai jika izin ditolak atau layanan lokasi mati.
+  /// - Meminta [Position] dengan batas waktu [timeout] jika izin dan layanan tersedia.
+  /// - Mengubah timeout dan exception geolocator menjadi [LocationResult].
   Future<LocationResult> getCurrentPosition({
     Duration timeout = const Duration(seconds: 10),
     LocationSettings? locationSettings,

@@ -6,10 +6,10 @@ import 'features/voice/voice_controller.dart';
 import 'services/speech_to_text_service.dart';
 import 'services/tts_service.dart';
 
-/// Root widget aplikasi DailyBrief.
+/// Menyusun widget akar aplikasi DailyBrief.
 ///
-/// Mengatur konfigurasi dasar [MaterialApp], tema global dari [AppTheme],
-/// serta layar awal Splash Screen (TASK-08, TASK-21).
+/// Mengatur [MaterialApp] dengan tema dari [AppTheme] dan menampilkan
+/// [SplashScreen] sebagai halaman awal.
 class DailyBriefApp extends StatefulWidget {
   final TtsService? ttsService;
   final SpeechToTextService? speechToTextService;

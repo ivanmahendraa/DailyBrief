@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// Status eksekusi proses inisialisasi aplikasi.
+/// Menentukan status proses inisialisasi aplikasi.
 enum InitializationStatus {
   initial,
   loading,
@@ -8,7 +8,7 @@ enum InitializationStatus {
   failure,
 }
 
-/// Representasi hasil dari inisialisasi aplikasi.
+/// Menyimpan status inisialisasi dan pesan kegagalan jika tersedia.
 class InitializationResult {
   final InitializationStatus status;
   final String? errorMessage;
@@ -31,16 +31,15 @@ class InitializationResult {
   bool get isFailure => status == InitializationStatus.failure;
 }
 
-/// Service untuk menangani inisialisasi komponen dasar sebelum halaman utama dibuka.
-///
-/// Memenuhi kebutuhan TASK-09 dan FR-01 pada PRD.md.
+/// Menjalankan tahap inisialisasi aplikasi sebelum halaman utama dibuka.
 class AppInitializer {
   const AppInitializer();
 
-  /// Menjalankan inisialisasi layanan dasar.
+  /// Menjalankan inisialisasi layanan inti aplikasi.
   ///
-  /// Mengembalikan [InitializationResult] yang menandakan apakah inisialisasi
-  /// berhasil atau gagal beserta pesan kesalahannya.
+  /// # Returns
+  ///
+  /// Mengembalikan [InitializationResult] yang menunjukkan keberhasilan atau kegagalan.
   Future<InitializationResult> initialize() async {
     try {
       await _initializeCoreServices();
@@ -53,9 +52,7 @@ class AppInitializer {
     }
   }
 
-  /// Mempersiapkan layanan dasar awal.
-  ///
-  /// Dirancang ringan dan tidak memperlambat startup lebih lama dari yang dibutuhkan (PRD NFR-03).
+  /// Menyediakan titik untuk menambahkan penyiapan layanan inti aplikasi.
   Future<void> _initializeCoreServices() async {
     // Titik penyiapan layanan dasar awal.
   }

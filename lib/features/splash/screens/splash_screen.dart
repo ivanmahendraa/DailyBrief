@@ -7,11 +7,10 @@ import '../../../services/tts_service.dart';
 import '../../home/screens/home_screen.dart';
 import '../../voice/voice_controller.dart';
 
-/// Halaman Splash Screen DailyBrief.
+/// Menampilkan splash screen selama proses inisialisasi aplikasi.
 ///
-/// Menampilkan identitas aplikasi, logo/ikon, tagline, indikator pemuatan,
-/// menjalankan inisialisasi layanan dasar, lalu melanjutkan ke Home Screen
-/// segera setelah inisialisasi berhasil.
+/// Setelah inisialisasi berhasil, memanggil callback dan beralih ke [HomeScreen]
+/// jika [navigateToHome] diaktifkan.
 class SplashScreen extends StatefulWidget {
   final AppInitializer initializer;
   final TtsService? ttsService;

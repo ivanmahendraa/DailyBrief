@@ -28,23 +28,36 @@ class DateTimeService {
 
   DateTimeService({DateTime Function()? now}) : _now = now ?? DateTime.now;
 
-  /// Returns the current local date and time from the device.
+  /// Mengembalikan tanggal dan waktu lokal saat ini.
   DateTime get currentLocalDateTime => _now();
 
-  /// Returns a spoken Indonesian response for the current local weekday.
+  static String weekdayNameFor(DateTime date) =>
+      _weekdayNames[date.weekday - 1];
+
+  static String formatDate(DateTime date) =>
+      '${date.day} ${_monthNames[date.month - 1]} ${date.year}';
+
+  String responseForDate(DateTime date, {bool includeWeekday = false}) {
+    final dateText = formatDate(date);
+    if (includeWeekday) {
+      return 'Tanggal $dateText jatuh pada hari ${weekdayNameFor(date)}.';
+    }
+
+    return 'Tanggal $dateText.';
+  }
+
+  /// Menyusun respons lisan berbahasa Indonesia tentang hari ini.
   String get currentDayResponse {
-    final weekday = _weekdayNames[currentLocalDateTime.weekday - 1];
+    final weekday = weekdayNameFor(currentLocalDateTime);
     return 'Hari ini hari $weekday.';
   }
 
-  /// Returns a spoken Indonesian response for the current local date.
+  /// Menyusun respons lisan berbahasa Indonesia tentang tanggal hari ini.
   String get currentDateResponse {
-    final date = currentLocalDateTime;
-    final month = _monthNames[date.month - 1];
-    return 'Hari ini tanggal ${date.day} $month ${date.year}.';
+    return 'Hari ini tanggal ${formatDate(currentLocalDateTime)}.';
   }
 
-  /// Returns a spoken Indonesian response for the current local time.
+  /// Menyusun respons lisan berbahasa Indonesia tentang waktu saat ini.
   String get currentTimeResponse {
     final time = currentLocalDateTime;
     final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;

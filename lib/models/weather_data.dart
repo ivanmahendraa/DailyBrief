@@ -1,25 +1,36 @@
 import 'package:flutter/foundation.dart';
 
-/// Model data yang merepresentasikan informasi cuaca terkini dari OpenWeatherMap.
+/// Menyimpan kondisi dan suhu cuaca yang diterima dari Open-Meteo.
 ///
-/// Memenuhi kebutuhan TASK-52 dan FR-10 pada PRD.md:
-/// Menyimpan deskripsi cuaca, temperatur, nama kota/wilayah, serta koordinat observasi.
+/// Data dapat mewakili kondisi terkini atau prakiraan harian.
 @immutable
 class WeatherData {
-  /// Kondisi atau deskripsi cuaca dalam bahasa Indonesia (misal: "berawan", "hujan ringan").
+  /// Menyimpan deskripsi kondisi cuaca dalam bahasa Indonesia.
   final String description;
 
-  /// Temperatur saat ini dalam derajat Celsius (units=metric).
+  /// Menyimpan suhu dalam derajat Celsius.
   final double temperature;
 
-  /// Nama kota atau wilayah observasi jika tersedia dari API (misal: "Batam").
+  /// Menyimpan nama kota atau wilayah jika tersedia dari API.
   final String? cityName;
 
-  /// Latitude koordinat observasi dari API.
+  /// Menyimpan lintang koordinat observasi dari API.
   final double? latitude;
 
-  /// Longitude koordinat observasi dari API.
+  /// Menyimpan bujur koordinat observasi dari API.
   final double? longitude;
+
+  /// Menyimpan tanggal lokal prakiraan harian, atau `null` untuk kondisi terkini.
+  final DateTime? forecastDate;
+
+  /// Menyimpan suhu minimum harian jika data prakiraan tersedia.
+  final double? minimumTemperature;
+
+  /// Menyimpan suhu maksimum harian jika data prakiraan tersedia.
+  final double? maximumTemperature;
+
+  /// Menyimpan kode cuaca WMO dari Open-Meteo.
+  final int? weatherCode;
 
   const WeatherData({
     required this.description,
@@ -27,9 +38,13 @@ class WeatherData {
     this.cityName,
     this.latitude,
     this.longitude,
+    this.forecastDate,
+    this.minimumTemperature,
+    this.maximumTemperature,
+    this.weatherCode,
   });
 
-  /// Temperatur yang dibulatkan ke bilangan bulat terdekat untuk kemudahan pembacaan.
+  /// Membulatkan suhu ke bilangan bulat terdekat untuk memudahkan pembacaan.
   int get roundedTemperature => temperature.round();
 
   @override
@@ -40,17 +55,25 @@ class WeatherData {
         other.temperature == temperature &&
         other.cityName == cityName &&
         other.latitude == latitude &&
-        other.longitude == longitude;
+        other.longitude == longitude &&
+        other.forecastDate == forecastDate &&
+        other.minimumTemperature == minimumTemperature &&
+        other.maximumTemperature == maximumTemperature &&
+        other.weatherCode == weatherCode;
   }
 
   @override
   int get hashCode => Object.hash(
-        description,
-        temperature,
-        cityName,
-        latitude,
-        longitude,
-      );
+    description,
+    temperature,
+    cityName,
+    latitude,
+    longitude,
+    forecastDate,
+    minimumTemperature,
+    maximumTemperature,
+    weatherCode,
+  );
 
   @override
   String toString() =>

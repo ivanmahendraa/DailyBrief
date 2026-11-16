@@ -3,27 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:daily_brief/core/config/weather_api_config.dart';
 import 'package:daily_brief/services/weather_service.dart';
 
-/// Fake client untuk pengujian WeatherService tanpa request HTTP.
 class _FakeWeatherClient implements WeatherClient {
   double? lastLatitude;
   double? lastLongitude;
   int callCount = 0;
-
-  WeatherResult resultToReturn = WeatherResult.success(
-    const WeatherData(
-      description: 'cerah berawan',
-      temperature: 31.2,
-      cityName: 'Batam',
-      latitude: 1.1301,
-      longitude: 104.0529,
-    ),
-  );
-
   bool throwException = false;
-  Object? customException;
 
   @override
   Future<WeatherResult> getCurrentWeather({
@@ -33,32 +19,26 @@ class _FakeWeatherClient implements WeatherClient {
     callCount++;
     lastLatitude = latitude;
     lastLongitude = longitude;
-
-    if (throwException) {
-      if (customException != null) throw customException!;
-      throw StateError('WeatherClient failed unexpectedly');
-    }
-
-    return resultToReturn;
+    if (throwException) throw StateError('WeatherClient failed');
+    return WeatherResult.success(
+      const WeatherData(description: 'cerah', temperature: 30),
+    );
   }
 }
 
-/// Fake HttpClient untuk menguji OpenWeatherMapClient tanpa koneksi internet.
 class _FakeHttpClient extends Fake implements HttpClient {
   Uri? lastUri;
+  @override
+  String? userAgent;
   int statusCode = 200;
   String responseBody = '{}';
-  bool throwOnGetUrl = false;
-  Object? getUrlException;
+  Object? requestError;
 
   @override
   Future<HttpClientRequest> getUrl(Uri url) async {
     lastUri = url;
-    if (throwOnGetUrl) {
-      if (getUrlException != null) throw getUrlException!;
-      throw const SocketException('Connection failed');
-    }
-    return _FakeHttpClientRequest(url, statusCode, responseBody);
+    if (requestError case final error?) throw error;
+    return _FakeHttpClientRequest(statusCode, responseBody);
   }
 
   @override
@@ -66,17 +46,14 @@ class _FakeHttpClient extends Fake implements HttpClient {
 }
 
 class _FakeHttpClientRequest extends Fake implements HttpClientRequest {
-  @override
-  final Uri uri;
   final int statusCode;
   final String responseBody;
 
-  _FakeHttpClientRequest(this.uri, this.statusCode, this.responseBody);
+  _FakeHttpClientRequest(this.statusCode, this.responseBody);
 
   @override
-  Future<HttpClientResponse> close() async {
-    return _FakeHttpClientResponse(statusCode, responseBody);
-  }
+  Future<HttpClientResponse> close() async =>
+      _FakeHttpClientResponse(statusCode, responseBody);
 }
 
 class _FakeHttpClientResponse extends Stream<List<int>>
@@ -94,488 +71,284 @@ class _FakeHttpClientResponse extends Stream<List<int>>
     Function? onError,
     void Function()? onDone,
     bool? cancelOnError,
-  }) {
-    return Stream<List<int>>.value(utf8.encode(body)).listen(
-      onData,
-      onError: onError,
-      onDone: onDone,
-      cancelOnError: cancelOnError,
-    );
-  }
+  }) => Stream<List<int>>.value(utf8.encode(body)).listen(
+    onData,
+    onError: onError,
+    onDone: onDone,
+    cancelOnError: cancelOnError,
+  );
 }
 
 void main() {
-  group('WeatherService Unit Tests (TASK-52)', () {
-    late _FakeWeatherClient fakeClient;
-    late WeatherService weatherService;
+  group('WeatherService', () {
+    test('passes device coordinates to the weather client', () async {
+      final client = _FakeWeatherClient();
+      final service = WeatherService(client);
 
-    setUp(() {
-      fakeClient = _FakeWeatherClient();
-      weatherService = WeatherService(fakeClient);
-    });
-
-    test('1. Mengambil cuaca berhasil dan meneruskan latitude/longitude ke client', () async {
-      const lat = 1.1301;
-      const lon = 104.0529;
-
-      final result = await weatherService.getCurrentWeather(
-        latitude: lat,
-        longitude: lon,
-      );
-
-      expect(fakeClient.callCount, equals(1));
-      expect(fakeClient.lastLatitude, equals(lat));
-      expect(fakeClient.lastLongitude, equals(lon));
-      expect(result.isSuccess, isTrue);
-      expect(result.data, isNotNull);
-      expect(result.data!.description, equals('cerah berawan'));
-      expect(result.data!.temperature, equals(31.2));
-      expect(result.data!.roundedTemperature, equals(31));
-      expect(result.data!.cityName, equals('Batam'));
-    });
-
-    test('2. Menangani exception tak terduga dari client dengan aman tanpa crash', () async {
-      fakeClient.throwException = true;
-      fakeClient.customException = StateError('Koneksi terputus tiba-tiba');
-
-      final result = await weatherService.getCurrentWeather(
-        latitude: 1.0,
-        longitude: 104.0,
-      );
-
-      expect(result.isFailure, isTrue);
-      expect(result.message, contains(WeatherMessages.failure));
-    });
-  });
-
-  group('OpenWeatherMapClient Tests (TASK-52)', () {
-    late _FakeHttpClient fakeHttpClient;
-    late WeatherApiConfig testConfig;
-
-    setUp(() {
-      fakeHttpClient = _FakeHttpClient();
-      testConfig = const WeatherApiConfig(
-        apiKey: 'dummy_api_key_123',
-      );
-    });
-
-    Map<String, dynamic> createValidWeatherJson({
-      String description = 'berawan',
-      double temp = 29.5,
-      String name = 'Batam',
-      double lat = 1.1301,
-      double lon = 104.0529,
-    }) {
-      return {
-        'coord': {'lon': lon, 'lat': lat},
-        'weather': [
-          {'id': 803, 'main': 'Clouds', 'description': description}
-        ],
-        'main': {'temp': temp, 'humidity': 80},
-        'name': name,
-        'cod': 200,
-      };
-    }
-
-    test('1. Response cuaca berhasil diproses dengan benar', () async {
-      final jsonMap = createValidWeatherJson(
-        description: 'cerah berawan',
-        temp: 30.4,
-        name: 'Kangboi',
-      );
-      fakeHttpClient.responseBody = jsonEncode(jsonMap);
-
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
-      );
-
-      final result = await client.getCurrentWeather(
+      final result = await service.getCurrentWeather(
         latitude: 1.1301,
         longitude: 104.0529,
       );
 
+      expect(client.callCount, 1);
+      expect(client.lastLatitude, 1.1301);
+      expect(client.lastLongitude, 104.0529);
       expect(result.isSuccess, isTrue);
-      expect(result.data, isNotNull);
-      expect(result.data!.description, equals('cerah berawan'));
-      expect(result.data!.temperature, equals(30.4));
-      expect(result.data!.cityName, equals('Kangboi'));
     });
 
-    test('2. Parsing temperatur berbagai nilai (desimal, pembulatan, dan minus)', () async {
-      // Positif desimal
-      final jsonPos = createValidWeatherJson(temp: 29.8);
-      fakeHttpClient.responseBody = jsonEncode(jsonPos);
+    test(
+      'converts an unexpected client exception to a failure result',
+      () async {
+        final client = _FakeWeatherClient()..throwException = true;
+        final result = await WeatherService(client)
+            .getCurrentWeather(latitude: 1, longitude: 104);
 
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
+        expect(result.isFailure, isTrue);
+        expect(result.message, contains(WeatherMessages.failure));
+      },
+    );
+  });
+
+  group('OpenMeteoClient', () {
+    late _FakeHttpClient httpClient;
+    late OpenMeteoClient client;
+
+    setUp(() {
+      httpClient = _FakeHttpClient();
+      client = OpenMeteoClient(
+        httpClientFactory: () => httpClient,
+        now: () => DateTime(2026, 11, 16, 15),
       );
-
-      final resultPos = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-      expect(resultPos.data!.temperature, equals(29.8));
-      expect(resultPos.data!.roundedTemperature, equals(30));
-
-      // Integer temperatur
-      final jsonInt = createValidWeatherJson(temp: 25.0);
-      fakeHttpClient.responseBody = jsonEncode(jsonInt);
-      final resultInt = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-      expect(resultInt.data!.temperature, equals(25.0));
-      expect(resultInt.data!.roundedTemperature, equals(25));
-
-      // Minus temperatur
-      final jsonMinus = createValidWeatherJson(temp: -3.4);
-      fakeHttpClient.responseBody = jsonEncode(jsonMinus);
-      final resultMinus = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-      expect(resultMinus.data!.temperature, equals(-3.4));
-      expect(resultMinus.data!.roundedTemperature, equals(-3));
     });
 
-    test('3. Parsing deskripsi cuaca Bahasa Indonesia', () async {
-      const descriptions = [
-        'hujan ringan',
-        'hujan lebat disertai petir',
-        'cerah',
-        'kabut tipis',
-      ];
+    test('requests current weather without an API key', () async {
+      httpClient.responseBody = jsonEncode({
+        'current': {'temperature_2m': 30.4, 'weather_code': 2},
+      });
 
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
+      final result = await client.getCurrentWeather(
+        latitude: -5.477,
+        longitude: 118.191,
       );
 
-      for (final desc in descriptions) {
-        fakeHttpClient.responseBody = jsonEncode(createValidWeatherJson(description: desc));
-        final result = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-        expect(result.isSuccess, isTrue);
-        expect(result.data!.description, equals(desc));
+      expect(result.isSuccess, isTrue);
+      expect(result.data?.temperature, 30.4);
+      expect(result.data?.description, 'cerah berawan');
+      expect(result.data?.cityName, isNull);
+      expect(httpClient.lastUri?.host, 'api.open-meteo.com');
+      expect(httpClient.lastUri?.path, '/v1/forecast');
+      expect(httpClient.lastUri?.queryParameters['latitude'], '-5.477');
+      expect(httpClient.lastUri?.queryParameters['longitude'], '118.191');
+      expect(
+        httpClient.lastUri?.queryParameters['current'],
+        OpenMeteoClient.currentVariables,
+      );
+      expect(httpClient.lastUri?.queryParameters['timezone'], 'auto');
+      expect(
+        httpClient.lastUri?.queryParameters.containsKey('apikey'),
+        isFalse,
+      );
+      expect(httpClient.lastUri?.queryParameters.containsKey('appid'), isFalse);
+    });
+
+    test('maps WMO weather codes into Indonesian descriptions', () {
+      final descriptions = {
+        0: 'cerah',
+        2: 'cerah berawan',
+        3: 'berawan',
+        45: 'berkabut',
+        51: 'gerimis',
+        61: 'hujan ringan',
+        65: 'hujan lebat',
+        71: 'salju ringan',
+        82: 'hujan lebat',
+        95: 'hujan disertai petir',
+      };
+
+      for (final entry in descriptions.entries) {
+        final result = OpenMeteoClient.parseOpenMeteoResponse({
+          'current': {'temperature_2m': 27, 'weather_code': entry.key},
+        });
+        expect(result.data?.description, entry.value);
       }
     });
 
-    test('4. API key belum dikonfigurasi (unconfigured) mengembalikan status unconfigured tanpa HTTP request', () async {
-      final unconfiguredClient = OpenWeatherMapClient(
-        config: WeatherApiConfig.unconfigured(),
-        httpClientFactory: () => fakeHttpClient,
-      );
+    test(
+      'requests a date-specific forecast and parses daily temperature range',
+      () async {
+        httpClient.responseBody = jsonEncode({
+          'daily': {
+            'time': ['2026-11-18'],
+            'weather_code': [61],
+            'temperature_2m_min': [23.1],
+            'temperature_2m_max': [29.8],
+          },
+        });
 
-      final result = await unconfiguredClient.getCurrentWeather(
-        latitude: 1.1301,
-        longitude: 104.0529,
-      );
+        final result = await client.getWeatherForDate(
+          latitude: -6.2,
+          longitude: 106.8,
+          date: DateTime(2026, 11, 18),
+        );
 
-      expect(result.isUnconfigured, isTrue);
-      expect(result.status, equals(WeatherStatus.unconfigured));
-      expect(result.message, equals(WeatherMessages.unconfigured));
-      // Memastikan HTTP client tidak dipanggil sama sekali
-      expect(fakeHttpClient.lastUri, isNull);
-    });
+        expect(result.isSuccess, isTrue);
+        expect(result.data?.forecastDate, DateTime(2026, 11, 18));
+        expect(result.data?.minimumTemperature, 23.1);
+        expect(result.data?.maximumTemperature, 29.8);
+        expect(result.data?.weatherCode, 61);
+        expect(httpClient.lastUri?.path, '/v1/forecast');
+        expect(
+          httpClient.lastUri?.queryParameters['daily'],
+          OpenMeteoClient.dailyVariables,
+        );
+        expect(httpClient.lastUri?.queryParameters['start_date'], '2026-11-18');
+        expect(httpClient.lastUri?.queryParameters['end_date'], '2026-11-18');
+      },
+    );
 
-    test('5. HTTP 401 mengembalikan status unauthorized', () async {
-      fakeHttpClient.statusCode = 401;
-      fakeHttpClient.responseBody = jsonEncode({
-        'cod': 401,
-        'message': 'Invalid API key. Please see https://openweathermap.org/faq#error401 for more info.',
+    test('uses Forecast API past days for yesterday', () async {
+      httpClient.responseBody = jsonEncode({
+        'daily': {
+          'time': ['2026-11-15', '2026-11-16'],
+          'weather_code': [3],
+          'temperature_2m_min': [24, 25],
+          'temperature_2m_max': [31, 32],
+        },
       });
 
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
+      final result = await client.getWeatherForDate(
+        latitude: -6.2,
+        longitude: 106.8,
+        date: DateTime(2026, 11, 15),
       );
 
-      final result = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-
-      expect(result.isUnauthorized, isTrue);
-      expect(result.status, equals(WeatherStatus.unauthorized));
-      expect(result.message, equals(WeatherMessages.unauthorized));
+      expect(result.isSuccess, isTrue);
+      expect(result.data?.forecastDate, DateTime(2026, 11, 15));
+      expect(httpClient.lastUri?.host, 'api.open-meteo.com');
+      expect(httpClient.lastUri?.path, '/v1/forecast');
+      expect(httpClient.lastUri?.queryParameters['past_days'], '1');
+      expect(
+        httpClient.lastUri?.queryParameters['daily'],
+        OpenMeteoClient.dailyVariables,
+      );
     });
 
-    test('6. HTTP 429 mengembalikan status rateLimited', () async {
-      fakeHttpClient.statusCode = 429;
-      fakeHttpClient.responseBody = jsonEncode({
-        'cod': 429,
-        'message': 'Your account is temporary blocked due to exceeding of requests limitation of your subscription type.',
+    test('uses Archive API for dates older than recent past data', () async {
+      httpClient.responseBody = jsonEncode({
+        'daily': {
+          'time': ['2026-11-08'],
+          'weather_code': [3],
+          'temperature_2m_min': [24],
+          'temperature_2m_max': [31],
+        },
       });
 
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
+      final result = await client.getWeatherForDate(
+        latitude: -6.2,
+        longitude: 106.8,
+        date: DateTime(2026, 11, 8),
       );
 
-      final result = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-
-      expect(result.isRateLimited, isTrue);
-      expect(result.status, equals(WeatherStatus.rateLimited));
-      expect(result.message, equals(WeatherMessages.rateLimited));
+      expect(result.isSuccess, isTrue);
+      expect(httpClient.lastUri?.host, 'archive-api.open-meteo.com');
+      expect(httpClient.lastUri?.path, '/v1/archive');
     });
 
-    test('7. HTTP 404 mengembalikan status notFound', () async {
-      fakeHttpClient.statusCode = 404;
-      fakeHttpClient.responseBody = jsonEncode({
-        'cod': '404',
-        'message': 'city not found',
-      });
+    test(
+      'rejects forecast dates beyond provider range without a request',
+      () async {
+        final result = await client.getWeatherForDate(
+          latitude: -6.2,
+          longitude: 106.8,
+          date: DateTime(2026, 12, 3),
+        );
 
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
+        expect(result.isNotFound, isTrue);
+        expect(result.message, WeatherMessages.forecastUnavailable);
+        expect(httpClient.lastUri, isNull);
+      },
+    );
+
+    test('returns failure for missing or invalid current-weather fields', () {
+      expect(OpenMeteoClient.parseOpenMeteoResponse({}).isFailure, isTrue);
+      expect(
+        OpenMeteoClient.parseOpenMeteoResponse({
+          'current': {'temperature_2m': 'panas', 'weather_code': 1},
+        }).isFailure,
+        isTrue,
       );
-
-      final result = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-
-      expect(result.isNotFound, isTrue);
-      expect(result.status, equals(WeatherStatus.notFound));
-      expect(result.message, equals(WeatherMessages.notFound));
+      expect(
+        OpenMeteoClient.parseOpenMeteoResponse({
+          'current': {'temperature_2m': 28},
+        }).isFailure,
+        isTrue,
+      );
     });
 
-    test('8. Batas waktu (timeout) mengembalikan status timeout', () async {
-      fakeHttpClient.throwOnGetUrl = true;
-      fakeHttpClient.getUrlException = TimeoutException('Connection timed out');
-
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
+    test('maps HTTP rate limits and other server errors', () async {
+      httpClient.statusCode = 429;
+      expect(
+        (await client.getCurrentWeather(
+          latitude: 1,
+          longitude: 104,
+        )).isRateLimited,
+        isTrue,
       );
 
-      final result = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-
-      expect(result.isTimeout, isTrue);
-      expect(result.status, equals(WeatherStatus.timeout));
-      expect(result.message, equals(WeatherMessages.timeout));
-    });
-
-    test('9. Kegagalan koneksi jaringan (network error) mengembalikan status networkError', () async {
-      fakeHttpClient.throwOnGetUrl = true;
-      fakeHttpClient.getUrlException = const SocketException('No Internet Connection');
-
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
+      httpClient.statusCode = 500;
+      final result = await client.getCurrentWeather(
+        latitude: 1,
+        longitude: 104,
       );
-
-      final result = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-
-      expect(result.isNetworkError, isTrue);
-      expect(result.status, equals(WeatherStatus.networkError));
-      expect(result.message, equals(WeatherMessages.networkError));
-    });
-
-    test('10. HTTP error lainnya (misal: 500) mengembalikan status apiError', () async {
-      fakeHttpClient.statusCode = 500;
-      fakeHttpClient.responseBody = 'Internal Server Error';
-
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
-      );
-
-      final result = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-
       expect(result.isApiError, isTrue);
-      expect(result.status, equals(WeatherStatus.apiError));
       expect(result.message, contains('HTTP 500'));
     });
 
-    test('11. JSON tidak valid mengembalikan status failure', () async {
-      fakeHttpClient.statusCode = 200;
-      fakeHttpClient.responseBody = '<html>Bukan format JSON</html>';
-
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
+    test('maps timeout, network, and invalid JSON responses', () async {
+      httpClient.requestError = TimeoutException('request timed out');
+      expect(
+        (await client.getCurrentWeather(latitude: 1, longitude: 104)).isTimeout,
+        isTrue,
       );
 
-      final result = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-
-      expect(result.isFailure, isTrue);
-      expect(result.message, equals(WeatherMessages.invalidFormat));
-    });
-
-    test('12. Field JSON penting tidak tersedia mengembalikan status failure', () async {
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
+      httpClient.requestError = const SocketException('offline');
+      expect(
+        (await client.getCurrentWeather(
+          latitude: 1,
+          longitude: 104,
+        )).isNetworkError,
+        isTrue,
       );
 
-      // Kasus A: Map JSON bukan objek yang diharapkan (misal List)
-      fakeHttpClient.responseBody = jsonEncode([1, 2, 3]);
-      final resList = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-      expect(resList.isFailure, isTrue);
-
-      // Kasus B: Field 'main' hilang
-      fakeHttpClient.responseBody = jsonEncode({
-        'weather': [{'description': 'berawan'}],
-        'cod': 200,
-      });
-      final resNoMain = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-      expect(resNoMain.isFailure, isTrue);
-
-      // Kasus C: Field 'temp' hilang dari 'main'
-      fakeHttpClient.responseBody = jsonEncode({
-        'main': {'humidity': 70},
-        'weather': [{'description': 'berawan'}],
-        'cod': 200,
-      });
-      final resNoTemp = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-      expect(resNoTemp.isFailure, isTrue);
-
-      // Kasus D: Field 'temp' bukan angka
-      fakeHttpClient.responseBody = jsonEncode({
-        'main': {'temp': 'tiga puluh derajat'},
-        'weather': [{'description': 'berawan'}],
-        'cod': 200,
-      });
-      final resInvalidTemp = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-      expect(resInvalidTemp.isFailure, isTrue);
-
-      // Kasus E: Field 'weather' kosong
-      fakeHttpClient.responseBody = jsonEncode({
-        'main': {'temp': 30.0},
-        'weather': [],
-        'cod': 200,
-      });
-      final resEmptyWeather = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-      expect(resEmptyWeather.isFailure, isTrue);
-
-      // Kasus F: Field 'description' kosong dan tidak ada 'main' pada weather
-      fakeHttpClient.responseBody = jsonEncode({
-        'main': {'temp': 30.0},
-        'weather': [{'id': 800}],
-        'cod': 200,
-      });
-      final resNoDesc = await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-      expect(resNoDesc.isFailure, isTrue);
-    });
-
-    test('13. Koordinat latitude dan longitude diteruskan dengan benar ke URI request', () async {
-      fakeHttpClient.responseBody = jsonEncode(createValidWeatherJson());
-
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
+      httpClient
+        ..requestError = null
+        ..responseBody = '<html>invalid</html>';
+      expect(
+        (await client.getCurrentWeather(latitude: 1, longitude: 104)).isFailure,
+        isTrue,
       );
-
-      const lat = 1.1301;
-      const lon = 104.0529;
-
-      await client.getCurrentWeather(latitude: lat, longitude: lon);
-
-      expect(fakeHttpClient.lastUri, isNotNull);
-      final uri = fakeHttpClient.lastUri!;
-      expect(uri.queryParameters['lat'], equals('1.1301'));
-      expect(uri.queryParameters['lon'], equals('104.0529'));
-      expect(uri.queryParameters['appid'], equals('dummy_api_key_123'));
-    });
-
-    test('14. Parameter units=metric disertakan pada URI request', () async {
-      fakeHttpClient.responseBody = jsonEncode(createValidWeatherJson());
-
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
-      );
-
-      await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-
-      expect(fakeHttpClient.lastUri, isNotNull);
-      expect(fakeHttpClient.lastUri!.queryParameters['units'], equals('metric'));
-    });
-
-    test('15. Parameter lang=id disertakan pada URI request', () async {
-      fakeHttpClient.responseBody = jsonEncode(createValidWeatherJson());
-
-      final client = OpenWeatherMapClient(
-        config: testConfig,
-        httpClientFactory: () => fakeHttpClient,
-      );
-
-      await client.getCurrentWeather(latitude: 1.0, longitude: 104.0);
-
-      expect(fakeHttpClient.lastUri, isNotNull);
-      expect(fakeHttpClient.lastUri!.queryParameters['lang'], equals('id'));
-    });
-
-    test('16. Fallback ke field weather.main jika description kosong', () {
-      final jsonWithMainOnly = {
-        'main': {'temp': 28.0},
-        'weather': [
-          {'main': 'Rain'}
-        ],
-        'cod': 200,
-      };
-
-      final result = OpenWeatherMapClient.parseOpenWeatherResponse(jsonWithMainOnly);
-      expect(result.isSuccess, isTrue);
-      expect(result.data!.description, equals('Rain'));
-    });
-
-    test('17. Cod status selain 200 pada payload JSON dipetakan ke apiError', () {
-      final jsonError = {
-        'cod': 400,
-        'message': 'Nothing to geocode',
-      };
-
-      final result = OpenWeatherMapClient.parseOpenWeatherResponse(jsonError);
-      expect(result.isApiError, isTrue);
-      expect(result.message, contains('Nothing to geocode'));
     });
   });
 
-  group('WeatherData Model Tests', () {
-    test('equality, hashCode, dan toString mencocokkan data yang identik', () {
-      const dataA = WeatherData(
-        description: 'berawan',
-        temperature: 30.0,
-        cityName: 'Batam',
-        latitude: 1.1301,
-        longitude: 104.0529,
-      );
-      const dataB = WeatherData(
-        description: 'berawan',
-        temperature: 30.0,
-        cityName: 'Batam',
-        latitude: 1.1301,
-        longitude: 104.0529,
-      );
-      const dataC = WeatherData(
-        description: 'hujan',
-        temperature: 25.0,
-        cityName: 'Jakarta',
-      );
+  group('WeatherData and WeatherResult', () {
+    test('weather values compare and round temperatures', () {
+      const first = WeatherData(description: 'berawan', temperature: 30.5);
+      const equal = WeatherData(description: 'berawan', temperature: 30.5);
 
-      expect(dataA, equals(dataB));
-      expect(dataA.hashCode, equals(dataB.hashCode));
-      expect(dataA, isNot(equals(dataC)));
-      expect(dataA.toString(), contains('WeatherData'));
-      expect(dataA.toString(), contains('30.0°C'));
+      expect(first, equal);
+      expect(first.roundedTemperature, 31);
     });
-  });
 
-  group('WeatherResult Model Tests', () {
-    test('factory constructors dan status flags bekerja sesuai enum status', () {
-      const weatherData = WeatherData(description: 'cerah', temperature: 32.0);
+    test('result factories expose their relevant statuses', () {
+      const data = WeatherData(description: 'cerah', temperature: 32);
 
-      final success = WeatherResult.success(weatherData);
-      final unconfigured = WeatherResult.unconfigured();
-      final unauthorized = WeatherResult.unauthorized();
-      final rateLimited = WeatherResult.rateLimited();
-      final notFound = WeatherResult.notFound();
-      final timeout = WeatherResult.timeout();
-      final network = WeatherResult.networkError();
-      final api = WeatherResult.apiError();
-      final failure = WeatherResult.failure('Gagal');
-
-      expect(success.isSuccess, isTrue);
-      expect(success.data, equals(weatherData));
-      expect(unconfigured.isUnconfigured, isTrue);
-      expect(unauthorized.isUnauthorized, isTrue);
-      expect(rateLimited.isRateLimited, isTrue);
-      expect(notFound.isNotFound, isTrue);
-      expect(timeout.isTimeout, isTrue);
-      expect(network.isNetworkError, isTrue);
-      expect(api.isApiError, isTrue);
-      expect(failure.isFailure, isTrue);
-
-      expect(success.toString(), contains('WeatherResult'));
+      expect(WeatherResult.success(data).isSuccess, isTrue);
+      expect(WeatherResult.rateLimited().isRateLimited, isTrue);
+      expect(WeatherResult.notFound().isNotFound, isTrue);
+      expect(WeatherResult.timeout().isTimeout, isTrue);
+      expect(WeatherResult.networkError().isNetworkError, isTrue);
+      expect(WeatherResult.apiError().isApiError, isTrue);
+      expect(WeatherResult.failure('Gagal').isFailure, isTrue);
     });
   });
 }

@@ -6,78 +6,97 @@ void main() {
   group('WeatherResponseGenerator (TASK-53)', () {
     const generator = WeatherResponseGenerator();
 
-    test('1. Menghasilkan kalimat dengan lokasi perangkat, cuaca, dan suhu bulat', () {
-      const weather = WeatherData(
-        description: 'cerah',
-        temperature: 30.0,
-        cityName: 'Batam',
-      );
-
-      final response = generator.generate(weather, locationName: 'Batam');
-
-      expect(
-        response,
-        equals('Cuaca di Batam saat ini cerah dengan suhu 30 derajat Celsius.'),
-      );
-    });
-
-    test('2. Melakukan pembulatan suhu desimal ke atas dan ke bawah dengan benar', () {
-      // Pembulatan ke bawah (30.2 -> 30)
-      const weatherRoundDown = WeatherData(
-        description: 'berawan',
-        temperature: 30.2,
-        cityName: 'Batam',
-      );
-      expect(
-        generator.generate(weatherRoundDown, locationName: 'Batam'),
-        equals('Cuaca di Batam saat ini berawan dengan suhu 30 derajat Celsius.'),
-      );
-
-      // Pembulatan ke atas (29.8 -> 30)
-      const weatherRoundUp = WeatherData(
-        description: 'berawan',
-        temperature: 29.8,
-        cityName: 'Batam',
-      );
-      expect(
-        generator.generate(weatherRoundUp, locationName: 'Batam'),
-        equals('Cuaca di Batam saat ini berawan dengan suhu 30 derajat Celsius.'),
-      );
-
-      // Pembulatan half-up (25.5 -> 26)
-      const weatherHalf = WeatherData(
-        description: 'hujan',
-        temperature: 25.5,
-        cityName: 'Bandung',
-      );
-      expect(
-        generator.generate(weatherHalf, locationName: 'Bandung'),
-        equals('Cuaca di Bandung saat ini hujan dengan suhu 26 derajat Celsius.'),
-      );
-    });
-
-    test('3. Menangani berbagai variasi deskripsi kondisi cuaca Bahasa Indonesia', () {
-      const descriptions = [
-        'cerah berawan',
-        'hujan ringan',
-        'hujan lebat disertai petir',
-        'kabut tebal',
-      ];
-
-      for (final desc in descriptions) {
-        final weather = WeatherData(
-          description: desc,
-          temperature: 28.0,
-          cityName: 'Jakarta',
+    test(
+      '1. Menghasilkan kalimat dengan lokasi perangkat, cuaca, dan suhu bulat',
+      () {
+        const weather = WeatherData(
+          description: 'cerah',
+          temperature: 30.0,
+          cityName: 'Batam',
         );
 
-        final response = generator.generate(weather, locationName: 'Jakarta');
+        final response = generator.generate(weather, locationName: 'Batam');
+
         expect(
           response,
-          equals('Cuaca di Jakarta saat ini $desc dengan suhu 28 derajat Celsius.'),
+          equals(
+            'Cuaca di Batam saat ini cerah dengan suhu 30 derajat Celsius.',
+          ),
         );
-      }
-    });
+      },
+    );
+
+    test(
+      '2. Melakukan pembulatan suhu desimal ke atas dan ke bawah dengan benar',
+      () {
+        // Pembulatan ke bawah (30.2 -> 30)
+        const weatherRoundDown = WeatherData(
+          description: 'berawan',
+          temperature: 30.2,
+          cityName: 'Batam',
+        );
+        expect(
+          generator.generate(weatherRoundDown, locationName: 'Batam'),
+          equals(
+            'Cuaca di Batam saat ini berawan dengan suhu 30 derajat Celsius.',
+          ),
+        );
+
+        // Pembulatan ke atas (29.8 -> 30)
+        const weatherRoundUp = WeatherData(
+          description: 'berawan',
+          temperature: 29.8,
+          cityName: 'Batam',
+        );
+        expect(
+          generator.generate(weatherRoundUp, locationName: 'Batam'),
+          equals(
+            'Cuaca di Batam saat ini berawan dengan suhu 30 derajat Celsius.',
+          ),
+        );
+
+        // Pembulatan half-up (25.5 -> 26)
+        const weatherHalf = WeatherData(
+          description: 'hujan',
+          temperature: 25.5,
+          cityName: 'Bandung',
+        );
+        expect(
+          generator.generate(weatherHalf, locationName: 'Bandung'),
+          equals(
+            'Cuaca di Bandung saat ini hujan dengan suhu 26 derajat Celsius.',
+          ),
+        );
+      },
+    );
+
+    test(
+      '3. Menangani berbagai variasi deskripsi kondisi cuaca Bahasa Indonesia',
+      () {
+        const descriptions = [
+          'cerah berawan',
+          'hujan ringan',
+          'hujan lebat disertai petir',
+          'kabut tebal',
+        ];
+
+        for (final desc in descriptions) {
+          final weather = WeatherData(
+            description: desc,
+            temperature: 28.0,
+            cityName: 'Jakarta',
+          );
+
+          final response = generator.generate(weather, locationName: 'Jakarta');
+          expect(
+            response,
+            equals(
+              'Cuaca di Jakarta saat ini $desc dengan suhu 28 derajat Celsius.',
+            ),
+          );
+        }
+      },
+    );
 
     test('4. Mengubah deskripsi cuaca menjadi huruf kecil secara natural dalam kalimat', () {
       const weather = WeatherData(
@@ -89,7 +108,9 @@ void main() {
       final response = generator.generate(weather, locationName: 'Medan');
       expect(
         response,
-        equals('Cuaca di Medan saat ini hujan deras dengan suhu 27 derajat Celsius.'),
+        equals(
+          'Cuaca di Medan saat ini hujan deras dengan suhu 27 derajat Celsius.',
+        ),
       );
     });
 
@@ -108,22 +129,24 @@ void main() {
       );
     });
 
-    test('menggunakan lokasi perangkat terstruktur dengan urutan administratif', () {
-      const weather = WeatherData(
-        description: 'awan mendung',
-        temperature: 25.0,
-        cityName: 'Kangboi',
-      );
+    test(
+      'menggunakan lokasi perangkat terstruktur dengan urutan administratif',
+      () {
+        const weather = WeatherData(
+          description: 'awan mendung',
+          temperature: 25.0,
+          cityName: 'Kangboi',
+        );
 
-      expect(
-        generator.generate(
-          weather,
-          locationName:
-              'Tembesi, Kecamatan Sagulung, Kota Batam, Kepulauan Riau, Indonesia',
-        ),
-        'Cuaca di Tembesi, Kecamatan Sagulung, Kota Batam, Kepulauan Riau, Indonesia saat ini awan mendung dengan suhu 25 derajat Celsius.',
-      );
-    });
+        expect(
+          generator.generate(
+            weather,
+            locationName: 'Tembesi, Kecamatan Sagulung, Kota Batam, Kepulauan Riau, Indonesia',
+          ),
+          'Cuaca di Tembesi, Kecamatan Sagulung, Kota Batam, Kepulauan Riau, Indonesia saat ini awan mendung dengan suhu 25 derajat Celsius.',
+        );
+      },
+    );
 
     test('6. Menghasilkan jawaban yang natural ketika cityName berupa string kosong atau spasi', () {
       const weatherEmpty = WeatherData(
@@ -158,7 +181,9 @@ void main() {
 
       expect(
         response,
-        equals('Cuaca di Sapporo saat ini salju ringan dengan suhu -4 derajat Celsius.'),
+        equals(
+          'Cuaca di Sapporo saat ini salju ringan dengan suhu -4 derajat Celsius.',
+        ),
       );
     });
 
@@ -176,20 +201,28 @@ void main() {
       expect(response.endsWith('derajat Celsius.'), isTrue);
     });
 
-    test('9. Menangani whitespace berlebih pada lokasi perangkat dan description', () {
-      const weather = WeatherData(
-        description: '  hujan rintik-rintik  ',
-        temperature: 26.0,
-        cityName: '  Kota Batam  ',
-      );
+    test(
+      '9. Menangani whitespace berlebih pada lokasi perangkat dan description',
+      () {
+        const weather = WeatherData(
+          description: '  hujan rintik-rintik  ',
+          temperature: 26.0,
+          cityName: '  Kota Batam  ',
+        );
 
-      final response = generator.generate(weather, locationName: '  Kota Batam  ');
+        final response = generator.generate(
+          weather,
+          locationName: '  Kota Batam  ',
+        );
 
-      expect(
-        response,
-        equals('Cuaca di Kota Batam saat ini hujan rintik-rintik dengan suhu 26 derajat Celsius.'),
-      );
-    });
+        expect(
+          response,
+          equals(
+            'Cuaca di Kota Batam saat ini hujan rintik-rintik dengan suhu 26 derajat Celsius.',
+          ),
+        );
+      },
+    );
 
     test('10. Menangani deskripsi yang kosong dengan fallback aman', () {
       const weather = WeatherData(
@@ -202,7 +235,9 @@ void main() {
 
       expect(
         response,
-        equals('Cuaca di Batam saat ini tidak diketahui dengan suhu 30 derajat Celsius.'),
+        equals(
+          'Cuaca di Batam saat ini tidak diketahui dengan suhu 30 derajat Celsius.',
+        ),
       );
     });
 
@@ -214,14 +249,22 @@ void main() {
       );
 
       final resp1 = generator.generate(weather, locationName: 'Denpasar');
-      final resp2 = generator.generateResponse(weather, locationName: 'Denpasar');
-      final resp3 = WeatherResponseGenerator.format(weather, locationName: 'Denpasar');
+      final resp2 = generator.generateResponse(
+        weather,
+        locationName: 'Denpasar',
+      );
+      final resp3 = WeatherResponseGenerator.format(
+        weather,
+        locationName: 'Denpasar',
+      );
 
       expect(resp1, equals(resp2));
       expect(resp1, equals(resp3));
       expect(
         resp1,
-        equals('Cuaca di Denpasar saat ini cerah berawan dengan suhu 32 derajat Celsius.'),
+        equals(
+          'Cuaca di Denpasar saat ini cerah berawan dengan suhu 32 derajat Celsius.',
+        ),
       );
     });
 
@@ -240,6 +283,28 @@ void main() {
       expect(response, contains('berawan tebal'));
       expect(response, contains('${weather.roundedTemperature}'));
       expect(response, contains('derajat Celsius'));
+    });
+
+    test('answers a rain-specific forecast using the WMO weather code', () {
+      final forecast = WeatherData(
+        description: 'hujan ringan',
+        temperature: 26,
+        forecastDate: DateTime(2026, 11, 17),
+        minimumTemperature: 23,
+        maximumTemperature: 29,
+        weatherCode: 61,
+      );
+
+      expect(
+        generator.generate(
+          forecast,
+          locationName: 'Batam',
+          specificQuestion: 'hujan',
+        ),
+        'Cuaca di Batam pada 17 November 2026: Ada kemungkinan hujan; '
+        'kondisi hujan ringan, dengan suhu berkisar antara 23 hingga '
+        '29 derajat Celsius.',
+      );
     });
   });
 }

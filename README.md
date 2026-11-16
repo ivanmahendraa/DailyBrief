@@ -9,8 +9,8 @@ utama, mendengar konfirmasi, lalu menerima jawaban melalui text-to-speech (TTS).
 - Perintah suara berbahasa Indonesia untuk hari, tanggal, waktu, cuaca, dan
   lokasi.
 - Area sentuh utama berlabel semantik dan umpan balik haptik.
-- Informasi cuaca OpenWeatherMap; nama lokasi berasal dari geocoder bawaan
-  platform Android/iOS.
+- Informasi cuaca Open-Meteo dan nama lokasi dari OpenStreetMap Nominatim,
+  menggunakan koordinat GPS perangkat.
 - Riwayat kategori perintah di Cloud Firestore untuk pengguna anonim. Aplikasi
   tidak menyimpan audio, transkrip, jawaban, atau koordinat.
 - Firebase Crashlytics pada build release Android dan iOS. Firebase Analytics
@@ -60,53 +60,42 @@ deploy aturan hanya dengan akun Firebase yang berwenang:
 firebase deploy --only firestore:rules --project=dailybrief-ivanmahendraa
 ```
 
-## Konfigurasi API cuaca
+## Data cuaca dan lokasi
 
-Cuaca menggunakan OpenWeatherMap Current Weather API. Salin contoh konfigurasi
-dan isi key Anda di file lokal `.env`:
+Cuaca diambil dari Open-Meteo Forecast API dan data historis Open-Meteo Archive
+API; pencarian nama tempat serta reverse geocoding menggunakan OpenStreetMap
+Nominatim. Keduanya tidak memerlukan API key untuk penggunaan
+pribadi/non-komersial, sehingga tidak diperlukan file `.env` atau
+`--dart-define` untuk menjalankan aplikasi.
+Informasi atribusi kedua sumber tersedia melalui ikon info pada halaman Home.
 
-```powershell
-Copy-Item .env.example .env
-```
+Cuaca untuk hari ini memakai kondisi terkini. Data hingga tujuh hari lalu
+menggunakan fitur past-days Forecast API, sedangkan tanggal yang lebih lama
+menggunakan Archive API. Prakiraan tanggal mendatang tersedia sampai 16 hari;
+tanggal yang lebih jauh akan dijelaskan sebagai di luar jangkauan prakiraan.
+Data historis dapat memiliki jeda ketersediaan dari penyedia.
 
-Edit `.env`, lalu jalankan:
+Open-Meteo free API dibatasi untuk penggunaan non-komersial, memiliki batas
+permintaan, dan tidak menjamin uptime. Data cuacanya dilisensikan CC BY 4.0.
+Nominatim publik memiliki batas maksimum satu permintaan per detik untuk
+aplikasi, mensyaratkan identitas `User-Agent` dan atribusi, serta dapat
+membatasi layanan yang melampaui kebijakannya. Aplikasi membatasi laju
+permintaan dan menyimpan hasil reverse geocoding dalam cache selama proses
+berjalan. Untuk penggunaan komersial atau trafik aplikasi yang lebih besar,
+gunakan layanan berlisensi atau server/proxy sendiri.
 
-```powershell
-flutter run --dart-define-from-file=.env
-```
-
-Alternatif tanpa file:
-
-```powershell
-flutter run --dart-define=OPENWEATHER_API_KEY=YOUR_API_KEY
-```
-
-Key bersifat opsional untuk menjalankan aplikasi; tanpa key, permintaan cuaca
-menampilkan status layanan belum dikonfigurasi. `.env` masuk `.gitignore` dan
-tidak boleh di-commit.
-
-**Penting:** `--dart-define` hanya menghindari hard-code key di sumber,
-bukan menyembunyikannya dari binary aplikasi yang didistribusikan. Batasi key
-sesuai kemampuan penyedia, pantau kuota, dan gunakan backend/proxy dengan
-secret server-side untuk produksi jika key harus dirahasiakan. Jangan
-menaruh key nyata pada dokumentasi, commit, log, atau screenshot.
-
-Reverse geocoding menggunakan geocoder bawaan Android/iOS dan tidak memerlukan
-Google Geocoding API key tersendiri. Hasilnya bergantung pada layanan platform
-dan mungkin memerlukan koneksi jaringan.
+Koordinat GPS atau koordinat tempat yang dicari dikirim ke Open-Meteo saat
+meminta cuaca. Nama tempat yang diketik/diucapkan dikirim ke Nominatim untuk
+pencarian; koordinat GPS dikirim ke Nominatim saat meminta nama lokasi.
+Jika nama tempat menyebut Batam, pencarian dibatasi ke wilayah Batam dan hasil
+divalidasi sebagai wilayah Indonesia/Batam. Jika hasil tidak cocok atau nama
+tempat cocok dengan beberapa lokasi, aplikasi meminta rincian tambahan.
+Koordinat dan jawaban tetap tidak disimpan sebagai riwayat di Cloud Firestore.
 
 ## Menjalankan aplikasi
 
-Tanpa konfigurasi API cuaca:
-
 ```powershell
 flutter run
-```
-
-Dengan `.env`:
-
-```powershell
-flutter run --dart-define-from-file=.env
 ```
 
 Pilih perangkat tertentu dengan `-d <device-id>` setelah memeriksa `flutter

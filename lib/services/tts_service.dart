@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
-/// Status operasional Text-to-Speech service.
+/// Menentukan status operasional layanan text-to-speech (TTS).
 enum TtsState {
   uninitialized,
   ready,
@@ -11,14 +11,14 @@ enum TtsState {
   error,
 }
 
-/// Status hasil dari proses pemutaran suara.
+/// Menentukan status hasil pemutaran TTS.
 enum TtsPlaybackStatus {
   success,
   failure,
   cancelled,
 }
 
-/// Representasi hasil pemutaran suara yang memuat status dan pesan error bila ada.
+/// Menyimpan status pemutaran TTS dan pesan kesalahan jika tersedia.
 class TtsPlaybackResult {
   final TtsPlaybackStatus status;
   final String? errorMessage;
@@ -44,8 +44,7 @@ class TtsPlaybackResult {
   bool get isCancelled => status == TtsPlaybackStatus.cancelled;
 }
 
-/// Kontrak abstraksi antarmuka FlutterTts untuk mendukung dependency injection
-/// dan pengujian unit tanpa bergantung pada audio hardware perangkat fisik.
+/// Mendefinisikan kontrak client TTS untuk injeksi dependensi dan pengujian tanpa perangkat audio.
 abstract class TtsClient {
   Future<dynamic> isLanguageAvailable(String language);
   Future<dynamic> setLanguage(String language);
@@ -61,7 +60,7 @@ abstract class TtsClient {
   void setCancelHandler(VoidCallback callback);
 }
 
-/// Implementasi default [TtsClient] yang membungkus instance nyata [FlutterTts].
+/// Membungkus instance [FlutterTts] sebagai implementasi default [TtsClient].
 class DefaultFlutterTtsClient implements TtsClient {
   final FlutterTts _flutterTts;
 
@@ -113,15 +112,13 @@ class DefaultFlutterTtsClient implements TtsClient {
       _flutterTts.setCancelHandler(callback);
 }
 
-/// Service untuk mengelola Text-to-Speech (TTS) pada aplikasi DailyBrief.
+/// Mengelola pemutaran text-to-speech (TTS) pada aplikasi DailyBrief.
 ///
-/// Bertanggung jawab atas:
-/// - Inisialisasi engine TTS dan pendaftaran event handler asli.
-/// - Pengaturan bahasa default (Bahasa Indonesia `id-ID`) dengan deteksi ketersediaan pada perangkat.
-/// - Pemilihan laju bicara dan volume suara default yang jelas dan mudah dipahami.
-/// - Pemutaran teks dengan deteksi penyelesaian suara yang sesungguhnya
-///   berbasis event callback (tanpa simulasi `Future.delayed`).
-/// - Penanganan kegagalan atau error tanpa menyebabkan crash pada aplikasi.
+/// Menangani proses berikut:
+/// - Mendaftarkan callback engine TTS.
+/// - Memeriksa ketersediaan bahasa dan menerapkan pengaturan suara.
+/// - Menentukan hasil pemutaran melalui callback platform.
+/// - Mengembalikan status ketika terjadi kegagalan.
 class TtsService {
   /// Bahasa default aplikasi DailyBrief (Bahasa Indonesia).
   static const String defaultLanguage = 'id-ID';
@@ -177,7 +174,7 @@ class TtsService {
   /// Nada bicara aktif saat ini.
   double get currentPitch => _currentPitch;
 
-  /// Memeriksa apakah suatu bahasa tersedia pada perangkat.
+  /// Memeriksa ketersediaan [language] pada perangkat.
   Future<bool> isLanguageAvailable(String language) async {
     try {
       final result = await _client.isLanguageAvailable(language);
@@ -190,12 +187,14 @@ class TtsService {
     }
   }
 
-  /// Menginisialisasi engine TTS dengan bahasa dan handler native.
+  /// Menginisialisasi engine TTS dan menerapkan konfigurasi suara.
   ///
-  /// Secara otomatis mengatur bahasa Indonesia (`id-ID`) apabila tersedia pada perangkat,
-  /// serta menerapkan laju bicara (`0.5`) dan volume (`1.0`) default yang mudah dipahami.
+  /// Mencoba menggunakan [language] atau `id` sesuai ketersediaan perangkat,
+  /// lalu menerapkan laju bicara, volume, dan nada.
   ///
-  /// Mengembalikan `true` jika inisialisasi berhasil, atau `false` jika terjadi error.
+  /// # Returns
+  ///
+  /// Mengembalikan `true` jika inisialisasi berhasil atau `false` jika terjadi kesalahan.
   Future<bool> initialize({
     String language = defaultLanguage,
     double speechRate = defaultSpeechRate,
@@ -313,11 +312,10 @@ class TtsService {
     }
   }
 
-  /// Memutar [text] dan menunggu hingga pemutaran suara benar-benar selesai
-  /// berdasarkan event completion native dari platform (tanpa penundaan tiruan `Future.delayed`).
+    /// Membacakan [text] hingga engine TTS melaporkan hasil pemutaran.
   ///
-  /// Mengembalikan [TtsPlaybackResult] yang mengindikasikan status sukses, dibatalkan,
-  /// atau gagal beserta rincian pesannya.
+    /// # Returns
+    /// Mengembalikan [TtsPlaybackResult] dengan status berhasil, dibatalkan, atau gagal.
   Future<TtsPlaybackResult> speak(String text) async {
     _diagnosticSpeakCount++;
     debugPrint(
@@ -370,7 +368,7 @@ class TtsService {
     }
   }
 
-  /// Menghentikan pemutaran suara yang sedang berlangsung.
+  /// Menghentikan pemutaran TTS yang sedang berlangsung.
   Future<void> stop() async {
     try {
       await _client.stop();

@@ -12,14 +12,12 @@ import '../../../services/speech_to_text_service.dart';
 import '../../../services/tts_service.dart';
 import '../../voice/voice_controller.dart';
 
-/// Halaman Utama (Home Screen) DailyBrief dengan konsep Daily Horizon.
+/// Menyediakan halaman utama untuk memulai interaksi suara dengan DailyBrief.
 ///
-/// Menyediakan antarmuka yang tenang, bersih, kontras tinggi, dan ramah aksesibilitas:
-/// - Header dengan simbol Daily Horizon dan nama aplikasi DailyBrief.
-/// - Status interaksi awal ("Siap Digunakan").
-/// - Area interaksi utama yang diperbesar dengan pengikatan event sentuh (onTap)
-///   dan umpan balik getaran haptik (HapticFeedback, TASK-14, TASK-25).
-/// - Petunjuk daftar perintah suara di bagian bawah.
+/// Menampilkan elemen utama berikut:
+/// - Menyertakan simbol aplikasi dan status interaksi.
+/// - Menyediakan area sentuh untuk memulai pengenalan suara dengan umpan balik haptik.
+/// - Menampilkan petunjuk perintah dan dialog atribusi sumber data.
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onTouchAreaTap;
   final VoiceController? voiceController;
@@ -60,8 +58,10 @@ class _HomeScreenState extends State<HomeScreen> {
         AppStrings.welcomeGreeting,
       );
       if (result.isFailure) {
-        debugPrint('HomeScreen welcome greeting playback error: '
-            '${result.errorMessage}');
+        debugPrint(
+          'HomeScreen welcome greeting playback error: '
+          '${result.errorMessage}',
+        );
       }
     } catch (error, stackTrace) {
       debugPrint(
@@ -167,6 +167,19 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         automaticallyImplyLeading: false,
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: AppStrings.dataSourcesTooltip,
+            icon: const Icon(Icons.info_outline),
+            onPressed: () {
+              showAboutDialog(
+                context: context,
+                applicationName: AppStrings.appName,
+                children: const [Text(AppStrings.dataSourcesAttribution)],
+              );
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: Padding(
@@ -344,7 +357,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              if (kDebugMode && defaultTargetPlatform == TargetPlatform.iOS) ...[
+              const SizedBox(height: 6),
+              if (kDebugMode &&
+                  defaultTargetPlatform == TargetPlatform.iOS) ...[
                 const SizedBox(height: 8),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,

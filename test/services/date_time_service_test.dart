@@ -94,6 +94,17 @@ void main() {
       }
     });
 
+    test('formats a resolved date and its weekday', () {
+      final service = DateTimeService(now: () => DateTime(2026, 11, 16));
+      final date = DateTime(2026, 12, 25);
+
+      expect(service.responseForDate(date), 'Tanggal 25 Desember 2026.');
+      expect(
+        service.responseForDate(date, includeWeekday: true),
+        'Tanggal 25 Desember 2026 jatuh pada hari Jumat.',
+      );
+    });
+
     test('formats local time with Indonesian day periods', () {
       final cases = [
         (DateTime(2026, 10, 16, 0), 'Sekarang pukul 12 malam tepat.'),

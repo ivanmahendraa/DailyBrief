@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Palet warna dasar untuk aplikasi DailyBrief.
-///
-/// Dirancang dengan kontras tinggi dan latar belakang bersih untuk
-/// mendukung kemudahan membaca serta aksesibilitas (PRD NFR-01).
+/// Menyediakan palet warna antarmuka DailyBrief.
 class AppColors {
   AppColors._();
 

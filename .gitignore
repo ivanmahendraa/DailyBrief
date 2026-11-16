@@ -58,7 +58,3 @@ app.*.map.json
 *.jks
 *.keystore
 key.properties
-
-# Private project planning documents
-/PRD.md
-/task.md

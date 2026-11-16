@@ -2,31 +2,21 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../services/speech_to_text_service.dart';
-import '../../../services/app_initializer.dart';
 import '../../../services/tts_service.dart';
 import '../../home/screens/home_screen.dart';
 import '../../voice/voice_controller.dart';
 
-/// Menampilkan splash screen selama proses inisialisasi aplikasi.
-///
-/// Setelah inisialisasi berhasil, memanggil callback dan beralih ke [HomeScreen]
-/// jika [navigateToHome] diaktifkan.
+/// Menampilkan splash screen sebelum beralih ke [HomeScreen].
 class SplashScreen extends StatefulWidget {
-  final AppInitializer initializer;
   final TtsService? ttsService;
   final SpeechToTextService? speechToTextService;
   final VoiceController? voiceController;
-  final VoidCallback? onInitialized;
-  final bool navigateToHome;
 
   const SplashScreen({
     super.key,
-    this.initializer = const AppInitializer(),
     this.ttsService,
     this.speechToTextService,
     this.voiceController,
-    this.onInitialized,
-    this.navigateToHome = true,
   });
 
   @override
@@ -34,75 +24,23 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  bool _isInitializing = false;
-  String? _errorMessage;
-  bool _isNavigating = false;
-
   @override
   void initState() {
     super.initState();
-    _startInitialization();
-  }
-
-  Future<void> _startInitialization() async {
-    if (!mounted || _isInitializing) return;
-    _isInitializing = true;
-
-    setState(() {
-      _errorMessage = null;
-    });
-
-    try {
-      final result = await widget.initializer.initialize();
-      if (!mounted) return;
-
-      if (!result.isSuccess) {
-        setState(() {
-          _errorMessage = result.errorMessage;
-        });
-        return;
-      }
-      _notifyInitialized();
-      if (widget.navigateToHome) _navigateToHome();
-    } catch (error, stackTrace) {
-      debugPrint('SplashScreen initialization flow error: $error\n$stackTrace');
-      if (!mounted) return;
-      setState(() {
-        _errorMessage =
-            'Gagal menyiapkan aplikasi. Sentuh coba lagi untuk mengulang.';
-      });
-    } finally {
-      _isInitializing = false;
-      if (mounted) setState(() {});
-    }
-  }
-
-  void _notifyInitialized() {
-    try {
-      widget.onInitialized?.call();
-    } catch (error, stackTrace) {
-      debugPrint(
-        'SplashScreen onInitialized callback error: $error\n$stackTrace',
-      );
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _navigateToHome());
   }
 
   void _navigateToHome() {
-    if (_isNavigating || !mounted) return;
-    _isNavigating = true;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => HomeScreen(
-            speechToTextService: widget.speechToTextService,
-            ttsService: widget.ttsService,
-            voiceController: widget.voiceController,
-          ),
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => HomeScreen(
+          speechToTextService: widget.speechToTextService,
+          ttsService: widget.ttsService,
+          voiceController: widget.voiceController,
         ),
-      );
-    });
+      ),
+    );
   }
 
   @override
@@ -163,63 +101,27 @@ class _SplashScreenState extends State<SplashScreen> {
 
               const Spacer(flex: 2),
 
-              // Status Inisialisasi: Error vs Indikator Loading
-              if (_errorMessage != null) ...[
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Semantics(
-                    liveRegion: true,
-                    child: Column(
-                      children: [
-                        const Icon(
-                          Icons.error_outline_rounded,
-                          color: AppColors.error,
-                          size: 36,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _errorMessage!,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: AppColors.error,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton.icon(
-                          onPressed: _isInitializing
-                              ? null
-                              : _startInitialization,
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: const Text('Coba Lagi'),
-                        ),
-                      ],
+              // Indikator loading ditampilkan selama frame splash pertama.
+              Semantics(
+                label: 'Memuat aplikasi',
+                child: const SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      AppColors.primary,
                     ),
                   ),
                 ),
-              ] else ...[
-                // Indikator Loading aktif selama proses inisialisasi hingga navigasi terjadi
-                Semantics(
-                  label: 'Memuat aplikasi',
-                  child: const SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        AppColors.primary,
-                      ),
-                    ),
-                  ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Menyiapkan informasi...',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.textTertiary,
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Menyiapkan informasi...',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.textTertiary,
-                  ),
-                ),
-              ],
+              ),
 
               const Spacer(flex: 1),
             ],

@@ -1,24 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:daily_brief/core/constants/app_strings.dart';
 import 'package:daily_brief/features/home/screens/home_screen.dart';
 import 'package:daily_brief/features/splash/screens/splash_screen.dart';
-import 'package:daily_brief/services/app_initializer.dart';
 import 'package:daily_brief/services/tts_service.dart';
-
-class _ControlledFakeInitializer extends AppInitializer {
-  final Completer<InitializationResult> _completer =
-      Completer<InitializationResult>();
-
-  void completeSuccess() {
-    _completer.complete(InitializationResult.success());
-  }
-
-  @override
-  Future<InitializationResult> initialize() => _completer.future;
-}
 
 class _RecordingTtsService extends TtsService {
   final List<String> spokenTexts = [];
@@ -39,38 +24,28 @@ class _ThrowingTtsService extends TtsService {
 
 void main() {
   group('Splash dan sapaan Home', () {
-    testWidgets(
-      'Splash menunggu inisialisasi lalu langsung membuka Home tanpa jeda tiruan',
-      (WidgetTester tester) async {
-        final initializer = _ControlledFakeInitializer();
-        final ttsService = _RecordingTtsService();
+    testWidgets('Splash membuka Home dan memutar sapaan tanpa jeda tiruan', (
+      WidgetTester tester,
+    ) async {
+      final ttsService = _RecordingTtsService();
 
-        await tester.pumpWidget(
-          MaterialApp(
-            home: SplashScreen(
-              initializer: initializer,
-              ttsService: ttsService,
-            ),
-          ),
-        );
+      await tester.pumpWidget(
+        MaterialApp(home: SplashScreen(ttsService: ttsService)),
+      );
 
-        expect(find.byType(SplashScreen), findsOneWidget);
-        expect(find.text('DailyBrief'), findsOneWidget);
-        expect(
-          find.text('Temukan Informasi dalam Satu Sentuhan'),
-          findsOneWidget,
-        );
-        expect(ttsService.spokenTexts, isEmpty);
+      expect(find.byType(SplashScreen), findsOneWidget);
+      expect(find.text('DailyBrief'), findsOneWidget);
+      expect(
+        find.text('Temukan Informasi dalam Satu Sentuhan'),
+        findsOneWidget,
+      );
+      expect(ttsService.spokenTexts, isEmpty);
 
-        initializer.completeSuccess();
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 400));
-        await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
 
-        expect(find.byType(HomeScreen), findsOneWidget);
-        expect(ttsService.spokenTexts, [AppStrings.welcomeGreeting]);
-      },
-    );
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(ttsService.spokenTexts, [AppStrings.welcomeGreeting]);
+    });
 
     testWidgets('TTS sapaan gagal tetapi Home tetap dapat digunakan', (
       WidgetTester tester,

@@ -139,9 +139,9 @@ pengumpulan.
 
 ## Hasil verifikasi terakhir
 
-Pada 4 November 2026:
+Pada 16 November 2026:
 
-- `flutter test` — 271 tes lulus.
+- `flutter test` — 256 tes lulus.
 - `flutter analyze` — tidak menemukan masalah.
 - `flutter build apk --debug` — berhasil.
 

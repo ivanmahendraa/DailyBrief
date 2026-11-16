@@ -3,9 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart' show Locale;
-import 'package:geocoding/geocoding.dart';
 import 'package:daily_brief/models/location_address.dart';
 
 export 'package:daily_brief/models/location_address.dart';
@@ -26,8 +23,6 @@ class GeocodingMessages {
       'Saya belum dapat memastikan lokasi tersebut di Batam. Bisa sebutkan nama tempat beserta kecamatan atau patokan terdekat?';
   static const String ambiguousPlaceClarification =
       'Saya menemukan beberapa tempat dengan nama serupa. Kota atau kecamatan mana yang Anda maksud?';
-  static const String unconfigured =
-      'Layanan geocoding belum dikonfigurasi dengan API key.';
   static const String failure =
       'Terjadi kesalahan saat menerjemahkan koordinat lokasi.';
 }
@@ -39,7 +34,6 @@ enum GeocodingStatus {
   networkError,
   rateLimited,
   apiError,
-  unconfigured,
   failure,
 }
 
@@ -82,11 +76,6 @@ class GeocodingResult {
     message: message ?? GeocodingMessages.apiError,
   );
 
-  factory GeocodingResult.unconfigured([String? message]) => GeocodingResult(
-    status: GeocodingStatus.unconfigured,
-    message: message ?? GeocodingMessages.unconfigured,
-  );
-
   factory GeocodingResult.failure(String message) =>
       GeocodingResult(status: GeocodingStatus.failure, message: message);
 
@@ -95,7 +84,6 @@ class GeocodingResult {
   bool get isNetworkError => status == GeocodingStatus.networkError;
   bool get isRateLimited => status == GeocodingStatus.rateLimited;
   bool get isApiError => status == GeocodingStatus.apiError;
-  bool get isUnconfigured => status == GeocodingStatus.unconfigured;
   bool get isFailure => !isSuccess;
 
   @override
@@ -592,252 +580,6 @@ String _normalizePlaceName(String value) => value
     .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
     .replaceAll(RegExp(r'\s+'), ' ')
     .trim();
-
-typedef DevicePlacemarkLookup = Future<List<Placemark>> Function(
-  double latitude,
-  double longitude,
-);
-
-/// Menerjemahkan koordinat menjadi alamat melalui geocoder bawaan Android atau iOS.
-class DeviceGeocodingClient implements GeocodingClient {
-  DeviceGeocodingClient({DevicePlacemarkLookup? lookup})
-    : _lookup = lookup ?? _lookupDevicePlacemark;
-
-  static final Geocoding _geocoding = Geocoding(
-    locale: const Locale('id', 'ID'),
-  );
-
-  final DevicePlacemarkLookup _lookup;
-
-  static Future<List<Placemark>> _lookupDevicePlacemark(
-    double latitude,
-    double longitude,
-  ) => _geocoding.placemarkFromCoordinates(latitude, longitude);
-
-  @override
-  Future<GeocodingResult> reverseGeocode({
-    required double latitude,
-    required double longitude,
-  }) async {
-    try {
-      final placemarks = await _lookup(latitude, longitude);
-      if (placemarks.isEmpty) return GeocodingResult.notFound();
-
-      final placemark = placemarks.first;
-      final city =
-          _nonEmpty(placemark.locality) ??
-          _nonEmpty(placemark.subAdministrativeArea);
-      final street =
-          _nonEmpty(placemark.thoroughfare) ?? _nonEmpty(placemark.street);
-      final streetNumber = _nonEmpty(placemark.subThoroughfare);
-      final subLocality = _nonEmpty(placemark.subLocality);
-      final province = _nonEmpty(placemark.administrativeArea);
-      final country = _nonEmpty(placemark.country);
-      final formattedAddress = [
-        street,
-        streetNumber,
-        subLocality,
-        city,
-        province,
-        country,
-      ].whereType<String>().toSet().join(', ');
-
-      final address = LocationAddress(
-        street: street,
-        streetNumber: streetNumber,
-        city: city,
-        subLocality: subLocality,
-        province: province,
-        country: country,
-        formattedAddress: formattedAddress.isEmpty ? null : formattedAddress,
-      );
-      if (address.displayName.isEmpty) return GeocodingResult.notFound();
-
-      return GeocodingResult.success(address);
-    } on PlatformException catch (error, stackTrace) {
-      debugPrint(
-        'DeviceGeocodingClient platform error: ${error.code}\n$stackTrace',
-      );
-      if (error.code == 'IO_ERROR') return GeocodingResult.networkError();
-      return GeocodingResult.failure(GeocodingMessages.failure);
-    } catch (error, stackTrace) {
-      debugPrint('DeviceGeocodingClient error: $error\n$stackTrace');
-      return GeocodingResult.failure(GeocodingMessages.failure);
-    }
-  }
-
-  String? _nonEmpty(String? value) {
-    final normalized = value?.trim();
-    return normalized == null || normalized.isEmpty ? null : normalized;
-  }
-}
-
-/// Menerjemahkan koordinat menjadi alamat melalui Google Geocoding API.
-///
-/// Mengembalikan [GeocodingStatus.unconfigured] jika [apiKey] tidak tersedia atau kosong.
-class GoogleGeocodingClient implements GeocodingClient {
-  final String? apiKey;
-  final HttpClient Function()? httpClientFactory;
-  final Duration timeout;
-  final String baseUrl;
-
-  GoogleGeocodingClient({
-    this.apiKey,
-    this.httpClientFactory,
-    this.timeout = const Duration(seconds: 10),
-    this.baseUrl = 'https://maps.googleapis.com/maps/api/geocode/json',
-  });
-
-  @override
-  Future<GeocodingResult> reverseGeocode({
-    required double latitude,
-    required double longitude,
-  }) async {
-    if (apiKey == null || apiKey!.trim().isEmpty) {
-      return GeocodingResult.unconfigured();
-    }
-
-    final queryParams = {
-      'latlng': '$latitude,$longitude',
-      'key': apiKey!,
-      'language': 'id',
-    };
-
-    final uri = Uri.parse(baseUrl).replace(queryParameters: queryParams);
-    final client = httpClientFactory != null
-        ? httpClientFactory!()
-        : HttpClient();
-
-    try {
-      final request = await client.getUrl(uri).timeout(timeout);
-      final response = await request.close().timeout(timeout);
-      final body = await response
-          .transform(utf8.decoder)
-          .join()
-          .timeout(timeout);
-
-      if (response.statusCode != 200) {
-        return GeocodingResult.apiError(
-          '${GeocodingMessages.apiError} (HTTP ${response.statusCode})',
-        );
-      }
-
-      final data = jsonDecode(body);
-      if (data is! Map<String, dynamic>) {
-        return GeocodingResult.failure('Format data geocoding tidak valid.');
-      }
-
-      return parseGoogleGeocodingResponse(data);
-    } on SocketException catch (e, stackTrace) {
-      debugPrint('GoogleGeocodingClient socket error: $e\n$stackTrace');
-      return GeocodingResult.networkError();
-    } on TimeoutException catch (e, stackTrace) {
-      debugPrint('GoogleGeocodingClient timeout: $e\n$stackTrace');
-      return GeocodingResult.networkError(
-        'Batas waktu koneksi geocoding habis. Silakan coba kembali.',
-      );
-    } on FormatException catch (e, stackTrace) {
-      debugPrint('GoogleGeocodingClient format error: $e\n$stackTrace');
-      return GeocodingResult.failure('Format data geocoding tidak valid.');
-    } catch (e, stackTrace) {
-      debugPrint('GoogleGeocodingClient unexpected error: $e\n$stackTrace');
-      return GeocodingResult.failure('${GeocodingMessages.failure}: $e');
-    } finally {
-      if (httpClientFactory == null) {
-        client.close();
-      }
-    }
-  }
-
-  /// Memetakan respons JSON Google Geocoding API ke [GeocodingResult].
-  static GeocodingResult parseGoogleGeocodingResponse(
-    Map<String, dynamic> data,
-  ) {
-    final status = data['status'] as String?;
-
-    if (status == 'ZERO_RESULTS') {
-      return GeocodingResult.notFound();
-    }
-
-    if (status != 'OK') {
-      final errorMessage = data['error_message'] as String?;
-      return GeocodingResult.apiError(
-        errorMessage != null && errorMessage.isNotEmpty
-            ? '${GeocodingMessages.apiError}: $errorMessage'
-            : '${GeocodingMessages.apiError} (status: $status)',
-      );
-    }
-
-    final results = data['results'] as List<dynamic>?;
-    if (results == null || results.isEmpty) {
-      return GeocodingResult.notFound();
-    }
-
-    final firstResult = results.first;
-    if (firstResult is! Map<String, dynamic>) {
-      return GeocodingResult.notFound();
-    }
-
-    final formattedAddress = firstResult['formatted_address'] as String?;
-    final addressComponents =
-        firstResult['address_components'] as List<dynamic>? ?? [];
-
-    String? locality;
-    String? adminAreaLevel2;
-    String? street;
-    String? streetNumber;
-    String? subLocality;
-    String? province;
-    String? country;
-    String? placeName;
-
-    for (final component in addressComponents) {
-      if (component is! Map<String, dynamic>) continue;
-
-      final types =
-          (component['types'] as List<dynamic>?)
-              ?.map((t) => t.toString())
-              .toSet() ??
-          <String>{};
-      final longName = component['long_name'] as String?;
-
-      if (types.contains('route')) {
-        street = longName;
-      } else if (types.contains('street_number')) {
-        streetNumber = longName;
-      } else if (types.contains('locality')) {
-        locality = longName;
-      } else if (types.contains('administrative_area_level_2')) {
-        adminAreaLevel2 = longName;
-      } else if (types.contains('sublocality') ||
-          types.contains('sublocality_level_1')) {
-        subLocality = longName;
-      } else if (types.contains('administrative_area_level_1')) {
-        province = longName;
-      } else if (types.contains('country')) {
-        country = longName;
-      } else if (types.contains('point_of_interest') ||
-          types.contains('establishment')) {
-        placeName = longName;
-      }
-    }
-
-    final city = locality ?? adminAreaLevel2;
-
-    final locationAddress = LocationAddress(
-      street: street,
-      streetNumber: streetNumber,
-      city: city,
-      subLocality: subLocality,
-      province: province,
-      country: country,
-      formattedAddress: formattedAddress,
-      placeName: placeName,
-    );
-
-    return GeocodingResult.success(locationAddress);
-  }
-}
 
 /// Mengubah koordinat geografis menjadi informasi alamat melalui client geocoding.
 class GeocodingService {

@@ -1076,23 +1076,6 @@ void main() {
         harness.controller.dispose();
       });
 
-      test('10. location command handles legacy unconfigured geocoding result safely', () async {
-        final fakeLocation = _FakeLocationService();
-        final fakeGeocoding = _FakeGeocodingService()
-          ..resultToReturn = GeocodingResult.unconfigured();
-        final harness = _Harness(
-          locationService: fakeLocation,
-          geocodingService: fakeGeocoding,
-        );
-
-        await harness.startAndConfirmListening();
-        await harness.emitFinalAndComplete('lokasi saya');
-
-        expect(harness.ttsService.spokenText, GeocodingMessages.unconfigured);
-        expect(harness.controller.state, VoiceInteractionState.idle);
-        harness.controller.dispose();
-      });
-
       test(
         '11. location command handles exceptions from location service safely',
         () async {

@@ -552,23 +552,6 @@ void main() {
       });
 
       test(
-        '9. Geocoding belum dikonfigurasi dengan API key (unconfigured)',
-        () async {
-          fixture.geocodingClient.resultToReturn =
-              GeocodingResult.unconfigured();
-
-          await fixture.startAndConfirmListening();
-          await fixture.emitCommandAndComplete('posisi saya');
-
-          expect(
-            fixture.ttsService.lastSpokenResponse,
-            GeocodingMessages.unconfigured,
-          );
-          expect(fixture.controller.state, VoiceInteractionState.idle);
-        },
-      );
-
-      test(
         '10. Exception tak terduga pada GeocodingService ditangani dengan aman',
         () async {
           fixture.geocodingClient.throwException = true;

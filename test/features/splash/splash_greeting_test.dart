@@ -1,9 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:daily_brief/core/constants/app_strings.dart';
 import 'package:daily_brief/features/home/screens/home_screen.dart';
 import 'package:daily_brief/features/splash/screens/splash_screen.dart';
 import 'package:daily_brief/services/tts_service.dart';
+
+const _accessibilityShortcutChannel = MethodChannel(
+  'dailybrief/accessibility_shortcut',
+);
+
+void _mockAccessibilityShortcutChannel(WidgetTester tester) {
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    _accessibilityShortcutChannel,
+    (call) async => call.method == 'consumePendingShortcut' ? false : null,
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      _accessibilityShortcutChannel,
+      null,
+    ),
+  );
+}
 
 class _RecordingTtsService extends TtsService {
   final List<String> spokenTexts = [];
@@ -27,6 +45,7 @@ void main() {
     testWidgets('Splash membuka Home dan memutar sapaan tanpa jeda tiruan', (
       WidgetTester tester,
     ) async {
+      _mockAccessibilityShortcutChannel(tester);
       final ttsService = _RecordingTtsService();
 
       await tester.pumpWidget(
@@ -50,6 +69,7 @@ void main() {
     testWidgets('TTS sapaan gagal tetapi Home tetap dapat digunakan', (
       WidgetTester tester,
     ) async {
+      _mockAccessibilityShortcutChannel(tester);
       await tester.pumpWidget(
         MaterialApp(home: HomeScreen(ttsService: _ThrowingTtsService())),
       );

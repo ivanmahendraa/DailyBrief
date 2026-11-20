@@ -8,6 +8,7 @@ import 'package:daily_brief/core/constants/app_strings.dart';
 import 'package:daily_brief/core/theme/app_theme.dart';
 import 'package:daily_brief/features/home/screens/home_screen.dart';
 import 'package:daily_brief/features/voice/voice_controller.dart';
+import 'package:daily_brief/services/accessibility_shortcut_service.dart';
 import 'package:daily_brief/services/speech_to_text_service.dart';
 import 'package:daily_brief/services/tts_service.dart';
 
@@ -104,6 +105,33 @@ class _HomeGreetingTtsService extends TtsService {
   }
 }
 
+class _FakeAccessibilityShortcutClient implements AccessibilityShortcutClient {
+  bool pendingShortcut = false;
+  VoidCallback? shortcutRequestHandler;
+  int accessibilitySettingsCallCount = 0;
+  int appSettingsCallCount = 0;
+
+  @override
+  Future<bool> consumePendingShortcut() async => pendingShortcut;
+
+  @override
+  Future<void> openAccessibilitySettings() async {
+    accessibilitySettingsCallCount++;
+  }
+
+  @override
+  Future<void> openAppSettings() async {
+    appSettingsCallCount++;
+  }
+
+  @override
+  void setShortcutRequestHandler(VoidCallback? handler) {
+    shortcutRequestHandler = handler;
+  }
+
+  void emitShortcutRequest() => shortcutRequestHandler?.call();
+}
+
 void main() {
   group('TASK-12: Home Screen DailyBrief Tests', () {
     late _HomeGreetingTtsService greetingTtsService;
@@ -115,6 +143,7 @@ void main() {
     Widget buildTestableHomeScreen({
       VoidCallback? onTouchAreaTap,
       VoiceController? voiceController,
+      AccessibilityShortcutClient? shortcutClient,
     }) {
       return MaterialApp(
         theme: AppTheme.lightTheme,
@@ -122,6 +151,8 @@ void main() {
           onTouchAreaTap: onTouchAreaTap,
           voiceController: voiceController ?? _FakeVoiceController(),
           ttsService: greetingTtsService,
+          accessibilityShortcutClient:
+              shortcutClient ?? _FakeAccessibilityShortcutClient(),
         ),
       );
     }
@@ -215,6 +246,118 @@ void main() {
         expect(find.text(AppStrings.dataSourcesAttribution), findsOneWidget);
       },
     );
+
+    testWidgets('panduan menjelaskan layanan dan membuka pengaturan Android', (
+      WidgetTester tester,
+    ) async {
+      final shortcutClient = _FakeAccessibilityShortcutClient();
+      await tester.pumpWidget(
+        buildTestableHomeScreen(shortcutClient: shortcutClient),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip(AppStrings.dataSourcesTooltip));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Panduan pintasan aksesibilitas'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('DailyBrief Accessibility Shortcut'), findsOneWidget);
+      expect(find.textContaining('tidak membaca isi layar'), findsOneWidget);
+      await tester.tap(find.text('Buka pengaturan'));
+      await tester.pumpAndSettle();
+
+      expect(shortcutClient.accessibilitySettingsCallCount, 1);
+    });
+
+    testWidgets('shortcut memicu handler Home yang sama tepat satu kali', (
+      WidgetTester tester,
+    ) async {
+      final shortcutClient = _FakeAccessibilityShortcutClient();
+      final controller = _FakeVoiceController();
+      await tester.pumpWidget(
+        buildTestableHomeScreen(
+          voiceController: controller,
+          shortcutClient: shortcutClient,
+        ),
+      );
+      await tester.pumpAndSettle();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+
+      shortcutClient.emitShortcutRequest();
+      await tester.pump();
+
+      expect(controller.startActionCount, 1);
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('shortcut cold-start memakai Home tanpa sapaan TTS ganda', (
+      WidgetTester tester,
+    ) async {
+      final shortcutClient = _FakeAccessibilityShortcutClient()
+        ..pendingShortcut = true;
+      final controller = _FakeVoiceController();
+      greetingTtsService.spokenTexts.clear();
+      await tester.pumpWidget(
+        buildTestableHomeScreen(
+          voiceController: controller,
+          shortcutClient: shortcutClient,
+        ),
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(controller.startActionCount, 1);
+      expect(greetingTtsService.spokenTexts, isEmpty);
+      expect(find.byType(HomeScreen), findsOneWidget);
+    });
+
+    testWidgets('shortcut tidak memulai sesi saat interaksi sedang sibuk', (
+      WidgetTester tester,
+    ) async {
+      final shortcutClient = _FakeAccessibilityShortcutClient();
+      final controller = _FakeVoiceController();
+      await tester.pumpWidget(
+        buildTestableHomeScreen(
+          voiceController: controller,
+          shortcutClient: shortcutClient,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (final state in [
+        VoiceInteractionState.listening,
+        VoiceInteractionState.processing,
+        VoiceInteractionState.speaking,
+      ]) {
+        controller.emitState(state);
+        shortcutClient.emitShortcutRequest();
+        await tester.pump();
+      }
+
+      expect(controller.startActionCount, 0);
+    });
+
+    testWidgets('izin mikrofon yang ditolak menyediakan tautan Settings', (
+      WidgetTester tester,
+    ) async {
+      final shortcutClient = _FakeAccessibilityShortcutClient();
+      final controller = _FakeVoiceController()
+        ..currentErrorMessage = VoiceController.permissionDeniedMessage;
+      await tester.pumpWidget(
+        buildTestableHomeScreen(
+          voiceController: controller,
+          shortcutClient: shortcutClient,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Buka pengaturan izin mikrofon'));
+      await tester.pump();
+
+      expect(shortcutClient.appSettingsCallCount, 1);
+    });
 
     testWidgets(
       '6. Responsif dan tidak mengalami RenderFlex overflow pada ukuran layar kecil',

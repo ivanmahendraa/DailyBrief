@@ -1,0 +1,4 @@
+<resources>
+    <string name="accessibility_service_name">DailyBrief Accessibility Shortcut</string>
+    <string name="accessibility_service_description">Membuka DailyBrief saat tombol Aksesibilitas ditekan. Layanan ini tidak membaca isi layar.</string>
+</resources>

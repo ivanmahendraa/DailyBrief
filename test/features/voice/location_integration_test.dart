@@ -138,7 +138,11 @@ class _IntegrationTtsService extends TtsService {
 
   String? get lastSpokenResponse {
     final nonConfirmation = spokenTexts
-        .where((t) => t != AppStrings.voiceConfirmation)
+        .where(
+          (t) =>
+              t != AppStrings.voiceConfirmation &&
+              t != AppStrings.readyForNextQuestion,
+        )
         .toList();
     return nonConfirmation.isNotEmpty ? nonConfirmation.last : null;
   }

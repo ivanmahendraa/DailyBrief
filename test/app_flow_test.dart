@@ -13,6 +13,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+const _accessibilityShortcutChannel = MethodChannel(
+  'dailybrief/accessibility_shortcut',
+);
+
+void _mockAccessibilityShortcutChannel(WidgetTester tester) {
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    _accessibilityShortcutChannel,
+    (call) async => call.method == 'consumePendingShortcut' ? false : null,
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      _accessibilityShortcutChannel,
+      null,
+    ),
+  );
+}
+
 class _FlowSpeechClient implements SpeechToTextClient {
   void Function(String status)? _statusListener;
   SpeechResultCallback? _resultCallback;
@@ -63,7 +80,8 @@ class _FlowSpeechClient implements SpeechToTextClient {
 class _FlowTtsService extends TtsService {
   final spokenTexts = <String>[];
   final confirmationCompletion = Completer<TtsPlaybackResult>();
-  final responseCompletion = Completer<TtsPlaybackResult>();
+  final readyPromptCompletion = Completer<TtsPlaybackResult>();
+  final responseCompletions = <Completer<TtsPlaybackResult>>[];
   bool failGreeting = false;
 
   @override
@@ -78,8 +96,14 @@ class _FlowTtsService extends TtsService {
     if (text == AppStrings.voiceConfirmation) {
       return confirmationCompletion.future;
     }
-    if (text.startsWith('Hari ini hari ')) {
-      return responseCompletion.future;
+    if (text == AppStrings.readyForNextQuestion) {
+      return readyPromptCompletion.future;
+    }
+    if (text.startsWith('Hari ini hari ') ||
+        text.startsWith('Sekarang pukul')) {
+      final completion = Completer<TtsPlaybackResult>();
+      responseCompletions.add(completion);
+      return completion.future;
     }
     return Future.value(TtsPlaybackResult.success());
   }
@@ -99,6 +123,7 @@ void main() {
     testWidgets(
       'opens through splash, greets, listens, answers, and returns to ready',
       (tester) async {
+        _mockAccessibilityShortcutChannel(tester);
         tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
           SystemChannels.platform,
           (call) async => null,
@@ -177,10 +202,49 @@ void main() {
         ]);
         expect(historyWriter.commands, [VoiceCommand.day]);
 
-        ttsService.responseCompletion.complete(TtsPlaybackResult.success());
+        ttsService.responseCompletions.first.complete(
+          TtsPlaybackResult.success(),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(ttsService.spokenTexts, [
+          AppStrings.welcomeGreeting,
+          AppStrings.voiceConfirmation,
+          'Hari ini hari Jumat.',
+          AppStrings.readyForNextQuestion,
+        ]);
+        expect(find.text('Berbicara'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('touch_area_inkwell')));
+        await tester.pump();
+        expect(speechClient.listenCallCount, 1);
+
+        ttsService.readyPromptCompletion.complete(TtsPlaybackResult.success());
         await tester.pump();
         await tester.pump();
         expect(find.text(AppStrings.statusReady), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('touch_area_inkwell')));
+        await tester.pump();
+        await tester.pump();
+        expect(speechClient.listenCallCount, 2);
+
+        speechClient.emitStatus('listening');
+        speechClient.emitFinalResult('jam berapa');
+        await tester.pump();
+        speechClient.emitStatus('done');
+        await tester.pump();
+        await tester.pump();
+        expect(find.text('Berbicara'), findsOneWidget);
+        expect(ttsService.responseCompletions, hasLength(2));
+
+        ttsService.responseCompletions[1].complete(TtsPlaybackResult.success());
+        await tester.pump();
+        await tester.pump();
+        expect(ttsService.spokenTexts.last, AppStrings.readyForNextQuestion);
+        await tester.pump();
+        expect(find.text(AppStrings.statusReady), findsOneWidget);
+        expect(speechClient.listenCallCount, 2);
         expect(tester.takeException(), isNull);
       },
     );
@@ -188,6 +252,7 @@ void main() {
     testWidgets('continues to usable Home when the welcome TTS fails', (
       tester,
     ) async {
+      _mockAccessibilityShortcutChannel(tester);
       final speechService = SpeechToTextService(client: _FlowSpeechClient());
       final ttsService = _FlowTtsService()..failGreeting = true;
       final voiceController = VoiceController(

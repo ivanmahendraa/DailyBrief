@@ -2,13 +2,18 @@
 
 DailyBrief adalah aplikasi Flutter Android dan iOS untuk meminta informasi
 hari, tanggal, waktu, lokasi, dan cuaca melalui suara. Pengguna menyentuh area
-utama, mendengar konfirmasi, lalu menerima jawaban melalui text-to-speech (TTS).
+utama, mendengar konfirmasi, lalu menerima jawaban dan penanda siap-bertanya
+kembali melalui text-to-speech (TTS).
 
 ## Fitur
 
 - Perintah suara berbahasa Indonesia untuk hari, tanggal, waktu, cuaca, dan
   lokasi.
+- Setelah jawaban berhasil dibacakan, DailyBrief menyampaikan bahwa ia siap
+  menerima pertanyaan berikutnya sebelum kembali ke status siap.
 - Area sentuh utama berlabel semantik dan umpan balik haptik.
+- Pintasan Android melalui tombol Accessibility Button untuk membuka Home dan
+  memulai interaksi suara setelah tindakan eksplisit pengguna.
 - Informasi cuaca Open-Meteo dan nama lokasi dari OpenStreetMap Nominatim,
   menggunakan koordinat GPS perangkat.
 - Riwayat kategori perintah di Cloud Firestore untuk pengguna anonim. Aplikasi
@@ -102,6 +107,50 @@ Pilih perangkat tertentu dengan `-d <device-id>` setelah memeriksa `flutter
 devices`. Izin mikrofon dan lokasi diminta oleh layanan terkait saat
 dibutuhkan. Di iOS, tujuan izin dijelaskan pada `ios/Runner/Info.plist`.
 
+## Pintasan aksesibilitas Android
+
+DailyBrief mendaftarkan layanan **DailyBrief Accessibility Shortcut**. Layanan
+ini hanya merespons tombol Aksesibilitas Android; layanan tidak membaca isi
+layar aplikasi lain. Layanan tidak dinyalakan otomatis dan tidak meminta izin
+mikrofon saat diaktifkan.
+
+1. Dari Home DailyBrief, buka ikon info lalu pilih **Panduan pintasan
+   aksesibilitas**.
+2. Pilih **Buka pengaturan**, atau buka Pengaturan Android > Aksesibilitas >
+   layanan/aplikasi yang diinstal. Nama dan letak menu dapat berbeda menurut
+   produsen.
+3. Aktifkan **DailyBrief Accessibility Shortcut** secara manual dan setujui
+   dialog Android. Untuk menonaktifkannya, matikan layanan pada halaman yang
+   sama.
+4. Gunakan tombol Aksesibilitas di bilah navigasi layar atau gestur pintasan
+   yang disediakan perangkat. Tombol/gestur harus tersedia dan ditetapkan untuk
+   layanan ini.
+
+Tombol Aksesibilitas memerlukan Android 8.0 (API 26) atau lebih baru dan tidak
+tersedia pada semua mode navigasi/perangkat. Kombinasi tahan Volume Naik +
+Volume Turun adalah pintasan sistem yang dapat mengubah status layanan pada
+perangkat yang mendukungnya; kombinasi itu **tidak** mengirim event tombol
+biasa ke DailyBrief dan tidak membuka aplikasi. Tombol Power tidak dapat
+diambil alih aplikasi pihak ketiga.
+
+Setelah tombol Aksesibilitas ditekan, Android dapat mengizinkan DailyBrief
+membuka Home. Pembukaan dari latar belakang tetap tunduk pada pembatasan Android
+dan kebijakan produsen, sehingga tidak dijamin pada setiap versi/perangkat.
+Layanan tidak membuka aplikasi atau menyalakan mikrofon saat dihubungkan setelah
+restart. Saat layar terkunci, permintaan pintasan diabaikan; buka kunci lalu
+tekan tombol Aksesibilitas lagi. Jika aplikasi dihentikan paksa atau layanan
+dinonaktifkan, pintasan tidak dapat memulainya.
+
+Accessibility Service Android ditujukan untuk fungsi bantu aksesibilitas.
+Sebelum distribusi, tinjau kebijakan platform yang berlaku dan sediakan
+pengungkapan/persetujuan yang diwajibkan toko aplikasi.
+
+Di Home, pemicu pintasan menggunakan controller suara yang sama dengan area
+sentuh. Aplikasi menunggu Home siap dan foreground, tidak memulai sesi baru
+ketika interaksi sedang berlangsung, lalu memakai alur konfirmasi TTS dan STT
+yang ada. Izin mikrofon diminta melalui dialog Android saat dibutuhkan; jika
+ditolak, Home menampilkan tautan ke pengaturan izin aplikasi.
+
 ## Memeriksa dan membangun
 
 ```powershell
@@ -139,12 +188,15 @@ pengumpulan.
 
 ## Hasil verifikasi terakhir
 
-Pada 4 November 2026:
+Pada 20 November 2026:
 
-- `flutter test` — 271 tes lulus.
 - `flutter analyze` — tidak menemukan masalah.
+- `flutter test` — 263 tes lulus, termasuk pengujian alur suara berurutan dan
+  pintasan melalui fake platform channel.
 - `flutter build apk --debug` — berhasil.
 
-Validasi perangkat fisik, pengaktifan TalkBack/VoiceOver, konfigurasi Firebase
-Console, dan key produksi harus dilakukan di lingkungan/rilis terkait; hasil
-tes otomatis bukan pengganti pemeriksaan tersebut.
+Pintasan, tombol Accessibility Button, dialog izin mikrofon, pembatasan
+background launch, layar terkunci, dan kondisi setelah reboot belum diuji pada
+perangkat fisik. Hasil build dan tes otomatis bukan pengganti validasi pada
+perangkat Android; kompatibilitas OEM dan keputusan Android untuk membuka
+Activity perlu diverifikasi langsung.

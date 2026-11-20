@@ -8,6 +8,23 @@ import 'package:daily_brief/features/splash/screens/splash_screen.dart';
 import 'package:daily_brief/services/speech_to_text_service.dart';
 import 'package:daily_brief/services/tts_service.dart';
 
+const _accessibilityShortcutChannel = MethodChannel(
+  'dailybrief/accessibility_shortcut',
+);
+
+void _mockAccessibilityShortcutChannel(WidgetTester tester) {
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    _accessibilityShortcutChannel,
+    (call) async => call.method == 'consumePendingShortcut' ? false : null,
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      _accessibilityShortcutChannel,
+      null,
+    ),
+  );
+}
+
 /// Fake implementation of [TtsClient] yang segera menyelesaikan pemutaran suara
 /// untuk mendukung pengujian kontrol navigasi widget secara deterministik.
 class _ImmediateFakeTtsClient implements TtsClient {
@@ -104,6 +121,7 @@ void main() {
     testWidgets('1. Splash Screen ditampilkan pada awal peluncuran aplikasi', (
       WidgetTester tester,
     ) async {
+      _mockAccessibilityShortcutChannel(tester);
       await tester.pumpWidget(DailyBriefApp(ttsService: immediateTtsService));
 
       // Verifikasi identitas dan komponen Splash Screen pada peluncuran
@@ -124,6 +142,7 @@ void main() {
     testWidgets(
       'TTS Service yang sama dipakai sapaan Home dan interaksi suara',
       (WidgetTester tester) async {
+        _mockAccessibilityShortcutChannel(tester);
         final ttsClient = _ImmediateFakeTtsClient();
         final speechClient = _AppFlowSpeechClient();
         final ttsService = TtsService(client: ttsClient);

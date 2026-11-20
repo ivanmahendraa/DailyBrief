@@ -12,6 +12,10 @@ class AppStrings {
   /// Menyimpan konfirmasi suara sebelum pengenalan ucapan dimulai.
   static const String voiceConfirmation = 'Silakan berbicara.';
 
+  /// Menyimpan pemberitahuan setelah jawaban selesai dibacakan.
+  static const String readyForNextQuestion =
+      'Saya siap menerima pertanyaan berikutnya.';
+
   /// Menyimpan label status interaksi awal.
   static const String statusReady = 'Siap Digunakan';
 

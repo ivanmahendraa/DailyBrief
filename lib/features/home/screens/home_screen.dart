@@ -2,12 +2,13 @@ import 'dart:async';
 
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, kDebugMode, TargetPlatform;
+    show defaultTargetPlatform, kDebugMode, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_strings.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../services/accessibility_shortcut_service.dart';
 import '../../../services/speech_to_text_service.dart';
 import '../../../services/tts_service.dart';
 import '../../voice/voice_controller.dart';
@@ -23,6 +24,7 @@ class HomeScreen extends StatefulWidget {
   final VoiceController? voiceController;
   final SpeechToTextService? speechToTextService;
   final TtsService? ttsService;
+  final AccessibilityShortcutClient? accessibilityShortcutClient;
 
   const HomeScreen({
     super.key,
@@ -30,33 +32,54 @@ class HomeScreen extends StatefulWidget {
     this.voiceController,
     this.speechToTextService,
     this.ttsService,
+    this.accessibilityShortcutClient,
   });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late VoiceController _voiceController;
+  late TtsService _ttsService;
+  late AccessibilityShortcutClient _shortcutClient;
   bool _handlingTouch = false;
+  bool _handlingActivation = false;
+  bool _homeReady = false;
+  bool _shortcutRequestPending = false;
+  Future<void>? _welcomeGreetingFuture;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _ttsService = widget.ttsService ?? TtsService();
+    _shortcutClient =
+        widget.accessibilityShortcutClient ??
+        MethodChannelAccessibilityShortcutClient();
     _voiceController = _createVoiceController();
     _voiceController.addListener(_handleControllerChange);
+    if (_supportsAccessibilityShortcut) {
+      _shortcutClient.setShortcutRequestHandler(_onShortcutRequested);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_playWelcomeGreeting());
+      if (!mounted) return;
+      _homeReady = true;
+      unawaited(_initializeAccessibilityShortcut());
     });
   }
+
+  bool get _supportsAccessibilityShortcut =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  bool get _isResumed =>
+      WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
 
   Future<void> _playWelcomeGreeting() async {
     if (MediaQuery.of(context).accessibleNavigation) return;
 
     try {
-      final result = await (widget.ttsService ?? TtsService()).speak(
-        AppStrings.welcomeGreeting,
-      );
+      final result = await _ttsService.speak(AppStrings.welcomeGreeting);
       if (result.isFailure) {
         debugPrint(
           'HomeScreen welcome greeting playback error: '
@@ -70,16 +93,116 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _initializeAccessibilityShortcut() async {
+    if (!_supportsAccessibilityShortcut) {
+      _startWelcomeGreeting();
+      return;
+    }
+
+    try {
+      if (await _shortcutClient.consumePendingShortcut()) {
+        _shortcutRequestPending = true;
+      }
+    } on MissingPluginException {
+      debugPrint('Accessibility shortcut channel is unavailable.');
+    } on PlatformException catch (error) {
+      debugPrint(
+        'Accessibility shortcut initialization failed: ${error.message}',
+      );
+    }
+
+    if (!mounted) return;
+    if (_shortcutRequestPending) {
+      unawaited(_tryStartShortcutListening());
+    } else {
+      _startWelcomeGreeting();
+    }
+  }
+
+  void _startWelcomeGreeting() {
+    if (!mounted || _welcomeGreetingFuture != null) return;
+    final greeting = _playWelcomeGreeting();
+    _welcomeGreetingFuture = greeting;
+    unawaited(
+      greeting.whenComplete(() {
+        if (!mounted) return;
+        _welcomeGreetingFuture = null;
+        unawaited(_tryStartShortcutListening());
+      }),
+    );
+  }
+
+  void _onShortcutRequested() {
+    _shortcutRequestPending = true;
+    unawaited(_acknowledgeShortcutRequest());
+  }
+
+  Future<void> _acknowledgeShortcutRequest() async {
+    try {
+      await _shortcutClient.consumePendingShortcut();
+    } on MissingPluginException {
+      debugPrint('Accessibility shortcut channel is unavailable.');
+    } on PlatformException catch (error) {
+      debugPrint(
+        'Accessibility shortcut acknowledgement failed: ${error.message}',
+      );
+    }
+
+    if (mounted && _homeReady) {
+      await _tryStartShortcutListening();
+    }
+  }
+
+  Future<void> _tryStartShortcutListening() async {
+    if (!mounted ||
+        !_homeReady ||
+        !_shortcutRequestPending ||
+        !_isResumed ||
+        _welcomeGreetingFuture != null) {
+      return;
+    }
+
+    if (_voiceController.state != VoiceInteractionState.idle ||
+        _voiceController.hasActiveSession ||
+        _handlingActivation) {
+      _shortcutRequestPending = false;
+      return;
+    }
+
+    _shortcutRequestPending = false;
+    await _activateListening(requireResumed: true);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_tryStartShortcutListening());
+    }
+  }
+
   VoiceController _createVoiceController() =>
       widget.voiceController ??
       VoiceController(
         speechToTextService: widget.speechToTextService,
-        ttsService: widget.ttsService,
+        ttsService: _ttsService,
       );
 
   @override
   void didUpdateWidget(covariant HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.ttsService != widget.ttsService) {
+      _ttsService = widget.ttsService ?? TtsService();
+    }
+    if (oldWidget.accessibilityShortcutClient !=
+        widget.accessibilityShortcutClient) {
+      _shortcutClient.setShortcutRequestHandler(null);
+      _shortcutClient =
+          widget.accessibilityShortcutClient ??
+          MethodChannelAccessibilityShortcutClient();
+      if (_supportsAccessibilityShortcut) {
+        _shortcutClient.setShortcutRequestHandler(_onShortcutRequested);
+      }
+    }
     if (oldWidget.voiceController == widget.voiceController &&
         oldWidget.speechToTextService == widget.speechToTextService &&
         oldWidget.ttsService == widget.ttsService) {
@@ -112,11 +235,101 @@ class _HomeScreenState extends State<HomeScreen> {
         debugPrint('HomeScreen HapticFeedback error: $error');
       }
       if (!mounted) return;
-      unawaited(_voiceController.handleUserTap());
+      unawaited(_activateListening());
       widget.onTouchAreaTap?.call();
     } finally {
       _handlingTouch = false;
     }
+  }
+
+  Future<void> _activateListening({bool requireResumed = false}) async {
+    if (!mounted ||
+        (requireResumed && !_isResumed) ||
+        _handlingActivation ||
+        _voiceController.state != VoiceInteractionState.idle ||
+        _voiceController.hasActiveSession) {
+      return;
+    }
+
+    _handlingActivation = true;
+    try {
+      await _voiceController.handleUserTap();
+    } finally {
+      _handlingActivation = false;
+    }
+  }
+
+  Future<void> _openAccessibilitySettings() async {
+    Navigator.of(context).pop();
+    try {
+      await _shortcutClient.openAccessibilitySettings();
+    } on PlatformException catch (error) {
+      _showSettingsError(error.message);
+    } on MissingPluginException {
+      _showSettingsError(null);
+    }
+  }
+
+  Future<void> _openAppSettings() async {
+    try {
+      await _shortcutClient.openAppSettings();
+    } on PlatformException catch (error) {
+      _showSettingsError(error.message);
+    } on MissingPluginException {
+      _showSettingsError(null);
+    }
+  }
+
+  void _showSettingsError(String? message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message == null || message.isEmpty
+              ? 'Pengaturan Android tidak dapat dibuka.'
+              : 'Pengaturan Android tidak dapat dibuka: $message',
+        ),
+      ),
+    );
+  }
+
+  void _showAccessibilityShortcutHelp() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('DailyBrief Accessibility Shortcut'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Layanan ini hanya membuka DailyBrief saat tombol Aksesibilitas '
+            'ditekan. Layanan tidak membaca isi layar aplikasi lain dan tidak '
+            'mengaktifkan mikrofon saat layanan dinyalakan.\n\n'
+            'Untuk mengaktifkan: buka Pengaturan Aksesibilitas Android, pilih '
+            'DailyBrief Accessibility Shortcut, lalu nyalakan dengan '
+            'persetujuan Anda. Untuk menonaktifkan, matikan layanan di '
+            'halaman yang sama.\n\n'
+            'Untuk menggunakan: tekan tombol Aksesibilitas di navigasi layar '
+            'atau gestur pintasan yang disediakan perangkat. Ketersediaan dan '
+            'letak tombol berbeda menurut versi Android dan produsen.\n\n'
+            'Kombinasi Volume Naik + Volume Turun adalah pintasan sistem untuk '
+            'mengubah status layanan pada perangkat yang mendukungnya; '
+            'kombinasi itu bukan perintah tombol yang diterima aplikasi. '
+            'Tombol Power tidak dapat diambil alih aplikasi biasa. Android '
+            'juga dapat membatasi pembukaan aplikasi dari latar belakang atau '
+            'ketika layar terkunci.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Tutup'),
+          ),
+          TextButton(
+            onPressed: _openAccessibilitySettings,
+            child: const Text('Buka pengaturan'),
+          ),
+        ],
+      ),
+    );
   }
 
   String get _statusLabel => switch (_voiceController.state) {
@@ -130,6 +343,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _shortcutClient.setShortcutRequestHandler(null);
     _voiceController
       ..removeListener(_handleControllerChange)
       ..dispose();
@@ -175,7 +390,17 @@ class _HomeScreenState extends State<HomeScreen> {
               showAboutDialog(
                 context: context,
                 applicationName: AppStrings.appName,
-                children: const [Text(AppStrings.dataSourcesAttribution)],
+                children: [
+                  const Text(AppStrings.dataSourcesAttribution),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _showAccessibilityShortcutHelp();
+                    },
+                    icon: const Icon(Icons.accessibility_new),
+                    label: const Text('Panduan pintasan aksesibilitas'),
+                  ),
+                ],
               );
             },
           ),
@@ -241,6 +466,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
+                if (errorMessage == VoiceController.permissionDeniedMessage)
+                  TextButton.icon(
+                    onPressed: _openAppSettings,
+                    icon: const Icon(Icons.settings_outlined),
+                    label: const Text('Buka pengaturan izin mikrofon'),
+                  ),
               ],
 
               // 2. Area Interaksi Utama yang Diperbesar (Visual Focus & Interaksi Sentuh)

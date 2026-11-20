@@ -317,7 +317,7 @@ class VoiceController extends ChangeNotifier {
         final response = _recognizedText.trim().isEmpty
             ? noSpeechResponse
             : clarificationResponse;
-        unawaited(_speakResponse(sessionId, response));
+        unawaited(_speakResponse(sessionId, response, announceReady: false));
       case VoiceCommand.weather:
         unawaited(_handleWeatherCommand(sessionId, parsedCommand));
     }
@@ -353,7 +353,9 @@ class VoiceController extends ChangeNotifier {
     _sessionActive = false;
     _startInProgress = false;
     if (_isNoSpeechError(error)) {
-      unawaited(_speakResponse(sessionId, noSpeechResponse));
+      unawaited(
+        _speakResponse(sessionId, noSpeechResponse, announceReady: false),
+      );
       return;
     }
     _setError(_safeSpeechErrorMessage(error));
@@ -393,7 +395,11 @@ class VoiceController extends ChangeNotifier {
         final placeResult = await _placeSearchService.searchPlace(placeName);
         if (!_isCurrentSession(sessionId) || _disposed) return;
         if (!placeResult.isSuccess || placeResult.address == null) {
-          await _speakResponse(sessionId, placeResult.message);
+          await _speakResponse(
+            sessionId,
+            placeResult.message,
+            announceReady: false,
+          );
           return;
         }
         final address = placeResult.address!;
@@ -408,7 +414,11 @@ class VoiceController extends ChangeNotifier {
       if (!_isCurrentSession(sessionId) || _disposed) return;
 
       if (!locationResult.isSuccess || locationResult.location == null) {
-        await _speakResponse(sessionId, locationResult.message);
+        await _speakResponse(
+          sessionId,
+          locationResult.message,
+          announceReady: false,
+        );
         return;
       }
 
@@ -420,7 +430,11 @@ class VoiceController extends ChangeNotifier {
       if (!_isCurrentSession(sessionId) || _disposed) return;
 
       if (!geocodingResult.isSuccess || geocodingResult.address == null) {
-        await _speakResponse(sessionId, geocodingResult.message);
+        await _speakResponse(
+          sessionId,
+          geocodingResult.message,
+          announceReady: false,
+        );
         return;
       }
 
@@ -446,6 +460,7 @@ class VoiceController extends ChangeNotifier {
         await _speakResponse(
           sessionId,
           'Maaf, nama lokasi belum berhasil diketahui.',
+          announceReady: false,
         );
         return;
       }
@@ -457,6 +472,7 @@ class VoiceController extends ChangeNotifier {
         await _speakResponse(
           sessionId,
           'Terjadi kesalahan saat memproses informasi lokasi.',
+          announceReady: false,
         );
       }
     }
@@ -480,7 +496,11 @@ class VoiceController extends ChangeNotifier {
         if (!placeResult.isSuccess ||
             placeResult.latitude == null ||
             placeResult.longitude == null) {
-          await _speakResponse(sessionId, placeResult.message);
+          await _speakResponse(
+            sessionId,
+            placeResult.message,
+            announceReady: false,
+          );
           return;
         }
         latitude = placeResult.latitude!;
@@ -496,7 +516,11 @@ class VoiceController extends ChangeNotifier {
         if (!_isCurrentSession(sessionId) || _disposed) return;
 
         if (!locationResult.isSuccess || locationResult.location == null) {
-          await _speakResponse(sessionId, locationResult.message);
+          await _speakResponse(
+            sessionId,
+            locationResult.message,
+            announceReady: false,
+          );
           return;
         }
 
@@ -516,7 +540,11 @@ class VoiceController extends ChangeNotifier {
       if (!_isCurrentSession(sessionId) || _disposed) return;
 
       if (!weatherResult.isSuccess || weatherResult.data == null) {
-        await _speakResponse(sessionId, weatherResult.message);
+        await _speakResponse(
+          sessionId,
+          weatherResult.message,
+          announceReady: false,
+        );
         return;
       }
 
@@ -572,12 +600,17 @@ class VoiceController extends ChangeNotifier {
         await _speakResponse(
           sessionId,
           'Terjadi kesalahan saat memproses informasi cuaca.',
+          announceReady: false,
         );
       }
     }
   }
 
-  Future<void> _speakResponse(int sessionId, String response) async {
+  Future<void> _speakResponse(
+    int sessionId,
+    String response, {
+    bool announceReady = true,
+  }) async {
     if (!_isCurrentSession(sessionId) || _disposed) return;
 
     try {
@@ -600,8 +633,22 @@ class VoiceController extends ChangeNotifier {
       _lastPlaybackStatus = playbackResult.status;
       if (playbackResult.isFailure) {
         _setError(playbackFailureMessage);
-      } else {
+      } else if (playbackResult.isCancelled) {
         _finishSession();
+      } else if (!announceReady) {
+        _finishSession();
+      } else {
+        final readyPromptResult = await _ttsService.speak(
+          AppStrings.readyForNextQuestion,
+        );
+        if (!_isCurrentSession(sessionId) || _disposed) return;
+
+        _lastPlaybackStatus = readyPromptResult.status;
+        if (readyPromptResult.isFailure) {
+          _setError(playbackFailureMessage);
+        } else {
+          _finishSession();
+        }
       }
     } catch (error, stackTrace) {
       debugPrint('VoiceController TTS playback error: $error\n$stackTrace');

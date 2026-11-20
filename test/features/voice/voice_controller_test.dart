@@ -84,9 +84,11 @@ class _FakeTtsService extends TtsService {
   String? spokenText;
   final List<String> spokenTexts = [];
   TtsPlaybackResult playbackResult = TtsPlaybackResult.success();
+  TtsPlaybackResult readyPromptPlaybackResult = TtsPlaybackResult.success();
   TtsPlaybackResult confirmationPlaybackResult = TtsPlaybackResult.success();
   Completer<TtsPlaybackResult>? pendingConfirmation;
   Completer<TtsPlaybackResult>? pendingPlayback;
+  Completer<TtsPlaybackResult>? pendingReadyPrompt;
   bool speaking = false;
   bool initialized = false;
 
@@ -101,8 +103,17 @@ class _FakeTtsService extends TtsService {
   int get confirmationCallCount =>
       spokenTexts.where((text) => text == AppStrings.voiceConfirmation).length;
 
-  int get responseCallCount =>
-      spokenTexts.where((text) => text != AppStrings.voiceConfirmation).length;
+  int get responseCallCount => spokenTexts
+      .where(
+        (text) =>
+            text != AppStrings.voiceConfirmation &&
+            text != AppStrings.readyForNextQuestion,
+      )
+      .length;
+
+  int get readyPromptCallCount => spokenTexts
+      .where((text) => text == AppStrings.readyForNextQuestion)
+      .length;
 
   @override
   Future<bool> initialize({
@@ -119,15 +130,22 @@ class _FakeTtsService extends TtsService {
   @override
   Future<TtsPlaybackResult> speak(String text) async {
     speakCallCount++;
-    spokenText = text;
+    if (text != AppStrings.readyForNextQuestion) spokenText = text;
     spokenTexts.add(text);
     final isConfirmation = text == AppStrings.voiceConfirmation;
+    final isReadyPrompt = text == AppStrings.readyForNextQuestion;
     if (throwOnSpeak && !isConfirmation) throw StateError('TTS failed');
     speaking = true;
-    final pending = isConfirmation ? pendingConfirmation : pendingPlayback;
+    final pending = isConfirmation
+        ? pendingConfirmation
+        : isReadyPrompt
+        ? pendingReadyPrompt
+        : pendingPlayback;
     final result = pending == null
         ? isConfirmation
               ? confirmationPlaybackResult
+              : isReadyPrompt
+              ? readyPromptPlaybackResult
               : playbackResult
         : await pending.future;
     speaking = false;
@@ -140,6 +158,9 @@ class _FakeTtsService extends TtsService {
     speaking = false;
     if (pendingPlayback != null && !pendingPlayback!.isCompleted) {
       pendingPlayback!.complete(TtsPlaybackResult.cancelled());
+    }
+    if (pendingReadyPrompt != null && !pendingReadyPrompt!.isCompleted) {
+      pendingReadyPrompt!.complete(TtsPlaybackResult.cancelled());
     }
     if (pendingConfirmation != null && !pendingConfirmation!.isCompleted) {
       pendingConfirmation!.complete(TtsPlaybackResult.cancelled());
@@ -491,6 +512,7 @@ void main() {
         expect(harness.controller.state, VoiceInteractionState.idle);
         expect(harness.controller.hasActiveSession, isFalse);
         expect(harness.commandHistoryWriter.commands, isEmpty);
+        expect(harness.ttsService.readyPromptCallCount, 0);
         harness.controller.dispose();
       },
     );
@@ -502,6 +524,7 @@ void main() {
 
       expect(harness.ttsService.responseCallCount, 1);
       expect(harness.ttsService.spokenText, VoiceController.noSpeechResponse);
+      expect(harness.ttsService.readyPromptCallCount, 0);
       expect(harness.controller.state, VoiceInteractionState.idle);
       expect(harness.controller.errorMessage, isNull);
       harness.controller.dispose();
@@ -517,6 +540,7 @@ void main() {
 
       expect(harness.ttsService.responseCallCount, 1);
       expect(harness.ttsService.spokenText, VoiceController.noSpeechResponse);
+      expect(harness.ttsService.readyPromptCallCount, 0);
       expect(harness.controller.state, VoiceInteractionState.idle);
       harness.controller.dispose();
     });
@@ -533,6 +557,59 @@ void main() {
       expect(harness.controller.state, VoiceInteractionState.idle);
       expect(harness.controller.hasActiveSession, isFalse);
       expect(harness.commandHistoryWriter.commands, [VoiceCommand.day]);
+      harness.controller.dispose();
+    });
+
+    test('speaks the ready prompt after the answer and accepts the next question afterward', () async {
+      final harness = _Harness(
+        dateTimeService: DateTimeService(now: () => DateTime(2026, 10, 16)),
+      );
+      harness.ttsService.pendingPlayback = Completer<TtsPlaybackResult>();
+      harness.ttsService.pendingReadyPrompt = Completer<TtsPlaybackResult>();
+
+      await harness.startAndConfirmListening();
+      harness.speechClient.emitResult('hari ini', isFinal: true);
+      harness.speechClient.emitStatus('done');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(harness.controller.state, VoiceInteractionState.speaking);
+      expect(harness.ttsService.spokenTexts, [
+        AppStrings.voiceConfirmation,
+        'Hari ini hari Jumat.',
+      ]);
+
+      harness.ttsService.pendingPlayback!.complete(TtsPlaybackResult.success());
+      for (
+        var attempt = 0;
+        attempt < 5 && harness.ttsService.readyPromptCallCount == 0;
+        attempt++
+      ) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(harness.ttsService.spokenTexts, [
+        AppStrings.voiceConfirmation,
+        'Hari ini hari Jumat.',
+        AppStrings.readyForNextQuestion,
+      ]);
+      expect(harness.controller.state, VoiceInteractionState.speaking);
+      await harness.controller.startListening();
+      expect(harness.speechClient.listenCallCount, 1);
+
+      harness.ttsService.pendingReadyPrompt!.complete(
+        TtsPlaybackResult.success(),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(harness.controller.state, VoiceInteractionState.idle);
+
+      await harness.startAndConfirmListening();
+      await harness.emitFinalAndComplete('jam berapa');
+
+      expect(harness.speechClient.listenCallCount, 2);
+      expect(harness.ttsService.spokenText, startsWith('Sekarang pukul'));
+      expect(harness.ttsService.readyPromptCallCount, 2);
+      expect(harness.controller.state, VoiceInteractionState.idle);
       harness.controller.dispose();
     });
 
@@ -754,9 +831,27 @@ void main() {
           cancelledHarness.controller.lastPlaybackStatus,
           TtsPlaybackStatus.cancelled,
         );
+        expect(cancelledHarness.ttsService.readyPromptCallCount, 0);
         cancelledHarness.controller.dispose();
       },
     );
+
+    test('ready prompt failure returns to idle with a visible error', () async {
+      final harness = _Harness()
+        ..ttsService.readyPromptPlaybackResult = TtsPlaybackResult.failure(
+          'prompt failed',
+        );
+      await harness.startAndConfirmListening();
+      await harness.emitFinalAndComplete('hari ini');
+
+      expect(harness.ttsService.readyPromptCallCount, 1);
+      expect(harness.controller.state, VoiceInteractionState.idle);
+      expect(
+        harness.controller.errorMessage,
+        VoiceController.playbackFailureMessage,
+      );
+      harness.controller.dispose();
+    });
 
     test('cancel during speaking stops TTS and returns to idle', () async {
       final harness = _Harness();
